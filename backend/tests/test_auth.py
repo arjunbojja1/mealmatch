@@ -210,7 +210,13 @@ class TestLogin:
         assert res.json()["data"]["user"]["role"] == "restaurant"
 
     def test_login_recipient_success(self):
-        res = _login("recipient@mealmatch.dev", "Recipient1!")
+        # Recipient login always requires EBT credentials (EBT-Verif policy)
+        res = _login(
+            "recipient@mealmatch.dev",
+            "Recipient1!",
+            ebt_card_number="6001000000001201",
+            ebt_pin="2468",
+        )
         assert res.status_code == 200
         assert res.json()["data"]["user"]["role"] == "recipient"
         assert res.json()["data"]["user"]["ebt_verified"] is True
@@ -224,14 +230,20 @@ class TestLogin:
         )
         assert res.status_code == 200
 
-    def test_signup_then_login_recipient_does_not_require_ebt_again(self):
+    def test_signup_then_login_recipient_requires_ebt_each_time(self):
+        # EBT-Verif policy: EBT credentials are validated on every login
         _signup(
             email="sam.recipient@mealmatch.dev",
             role="recipient",
             ebt_card_number="6001000000003303",
             ebt_pin="8642",
         )
-        res = _login("sam.recipient@mealmatch.dev", "NewPass123")
+        res = _login(
+            "sam.recipient@mealmatch.dev",
+            "NewPass123",
+            ebt_card_number="6001000000003303",
+            ebt_pin="8642",
+        )
         assert res.status_code == 200
         assert res.json()["data"]["user"]["ebt_verified"] is True
 
@@ -510,7 +522,9 @@ class TestRoleGating:
             ebt_pin="0000",
         )
         res = client.get("/api/v1/admin/login-archive", headers=_admin_headers())
-        latest = res.json()["data"][0]
-        assert latest["email"] == "recipient@mealmatch.dev"
-        assert latest["success"] is False
-        assert latest["code"] == "INVALID_EBT_PIN"
+        archive = res.json()["data"]
+        # _admin_headers() triggers its own login — find the recipient's failed attempt
+        failed = next((e for e in archive if e["email"] == "recipient@mealmatch.dev"), None)
+        assert failed is not None
+        assert failed["success"] is False
+        assert failed["code"] == "INVALID_EBT_PIN"

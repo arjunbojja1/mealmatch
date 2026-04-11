@@ -14,7 +14,7 @@ export default function RecipientFeed() {
   const [focusedListingId, setFocusedListingId] = useState(routeState?.focusListingId || null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTag, setSelectedTag] = useState("all");
-  const [sortBy, setSortBy] = useState("ending-soon");
+  const [sortBy, setSortBy] = useState("recommended");
   const [showUrgentOnly, setShowUrgentOnly] = useState(false);
   const [notification, setNotification] = useState(null);
   const [claimCounts, setClaimCounts] = useState({});
@@ -127,6 +127,9 @@ export default function RecipientFeed() {
     }
 
     result.sort((a, b) => {
+      if (sortBy === "recommended") {
+        return Number(b.match_score || 0) - Number(a.match_score || 0);
+      }
       if (sortBy === "ending-soon") {
         return new Date(a.pickup_end) - new Date(b.pickup_end);
       }
@@ -299,6 +302,7 @@ export default function RecipientFeed() {
             onChange={(e) => setSortBy(e.target.value)}
             style={styles.select}
           >
+            <option value="recommended">Recommended</option>
             <option value="ending-soon">Ending soon</option>
             <option value="quantity-high">Highest quantity</option>
             <option value="newest">Newest listings</option>
@@ -405,13 +409,20 @@ export default function RecipientFeed() {
                     </p>
                   </div>
 
-                  <div
-                    style={{
-                      ...styles.statusBadge,
-                      ...(alreadyClaimed ? styles.statusClaimed : isUrgent ? styles.statusUrgent : styles.statusActive),
-                    }}
-                  >
-                    {alreadyClaimed ? "Claimed" : isUrgent ? "Urgent" : "Available"}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                    <div
+                      style={{
+                        ...styles.statusBadge,
+                        ...(alreadyClaimed ? styles.statusClaimed : isUrgent ? styles.statusUrgent : styles.statusActive),
+                      }}
+                    >
+                      {alreadyClaimed ? "Claimed" : isUrgent ? "Urgent" : "Available"}
+                    </div>
+                    {listing.match_score != null && listing.match_score >= 55 && (
+                      <div style={styles.matchBadge} title={(listing.match_reasons || []).join(" · ") || "Match score"}>
+                        {Math.round(listing.match_score)}% match
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -929,6 +940,17 @@ const styles = {
     background: "rgba(148,163,184,0.1)",
     color: "#94a3b8",
     border: "1px solid rgba(148,163,184,0.2)",
+  },
+  matchBadge: {
+    padding: "3px 9px",
+    borderRadius: "999px",
+    fontSize: "11px",
+    fontWeight: 700,
+    background: "rgba(168,85,247,0.14)",
+    color: "#c084fc",
+    border: "1px solid rgba(168,85,247,0.25)",
+    cursor: "default",
+    userSelect: "none",
   },
   infoGrid: {
     marginTop: 18,

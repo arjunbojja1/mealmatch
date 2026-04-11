@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 
 from main import (
     app,
-    _users,
+    user_repo,
     _seed_users,
     _ebt_records,
     _seed_ebt_records,
@@ -40,10 +40,10 @@ from main import (
 
 @pytest.fixture(autouse=True)
 def reset_all_state():
-    """Clear and re-seed every in-memory store before each test."""
+    """Clear and re-seed every store before each test."""
     listings.clear()
     claims.clear()
-    _users.clear()
+    user_repo.clear()
     _ebt_records.clear()
     _login_archive.clear()
     _seed_users()
@@ -51,7 +51,7 @@ def reset_all_state():
     yield
     listings.clear()
     claims.clear()
-    _users.clear()
+    user_repo.clear()
     _ebt_records.clear()
     _login_archive.clear()
     _seed_users()

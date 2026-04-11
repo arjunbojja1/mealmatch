@@ -1,13 +1,23 @@
 """
-MealMatch API  —  v0.4.0
+MealMatch API  —  v0.5.0
 FastAPI backend with JWT auth, role-based access control, recipient EBT
-verification, and in-memory storage.
+verification, SQLite-backed user persistence, smart matching, demand
+prediction, and partner bulk-claim flows.
 
 Default demo accounts (seeded at startup):
   admin@mealmatch.dev       / Admin1234!      role: admin
   restaurant@mealmatch.dev  / Restaurant1!    role: restaurant
   recipient@mealmatch.dev   / Recipient1!     role: recipient
+  partner@mealmatch.dev     / Partner1234!    role: partner
 """
+
+import sys
+import os
+
+# Allow "from db.repository import …" when running from backend dir or tests
+_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
 
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -23,6 +33,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field
+
+from db.repository import UserRepository, get_user_repository
+from matching import score as _match_score
+from prediction import predict_demand
 
 try:
     from jwt import ExpiredSignatureError, InvalidTokenError
@@ -40,7 +54,7 @@ if not hasattr(jwt, "encode") or not hasattr(jwt, "decode"):
 # App setup
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="MealMatch API", version="0.4.0")
+app = FastAPI(title="MealMatch API", version="0.5.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -126,6 +140,7 @@ class UserInDB(BaseModel):
     hashed_password: str
     ebt_verified: bool = False
     ebt_last4: str = ""
+    logo_url: str = ""
 
 
 class UserPublic(BaseModel):
@@ -136,6 +151,7 @@ class UserPublic(BaseModel):
     location: str = ""
     ebt_verified: bool = False
     ebt_last4: str = ""
+    logo_url: str = ""
 
 
 class UserCreate(BaseModel):
@@ -146,6 +162,7 @@ class UserCreate(BaseModel):
     location: str = ""
     ebt_card_number: str | None = None
     ebt_pin: str | None = None
+    logo_url: str = ""
 
 
 class UserLogin(BaseModel):
@@ -178,8 +195,11 @@ class LoginAuditEntry(BaseModel):
 # Auth storage + seeding
 # ---------------------------------------------------------------------------
 
-_users: dict[str, UserInDB] = {}  # keyed by lowercase email
-_ebt_records: dict[str, SimulatedEBTRecord] = {}  # keyed by lowercase email
+# SQLite-backed persistent user store (replaces the former _users dict)
+user_repo: UserRepository = get_user_repository()
+
+# In-memory stores (static/ephemeral — no persistence needed)
+_ebt_records: dict[str, SimulatedEBTRecord] = {}
 _login_archive: list[LoginAuditEntry] = []
 _auth_lock = threading.Lock()
 
@@ -195,41 +215,46 @@ def _verify_pw(plain: str, hashed: str) -> bool:
         return False
 
 
+# Brand-name → logo URL hints (non-blocking restaurant signup suggestion)
+_BRAND_LOGOS: dict[str, str] = {
+    "wholefoods": "https://logo.clearbit.com/wholefoodsmarket.com",
+    "chipotle": "https://logo.clearbit.com/chipotle.com",
+    "panera": "https://logo.clearbit.com/panerabread.com",
+    "sweetgreen": "https://logo.clearbit.com/sweetgreen.com",
+    "freshmarket": "https://logo.clearbit.com/thefreshmarket.com",
+}
+
+
+def _suggest_logo(name: str) -> str:
+    """Return a logo URL hint when the restaurant name matches a known brand."""
+    slug = name.lower().replace(" ", "").replace("'", "").replace("-", "")
+    for brand, url in _BRAND_LOGOS.items():
+        if brand in slug or slug in brand:
+            return url
+    return ""
+
+
 def _seed_users() -> None:
-    """Populate default demo accounts."""
+    """Populate default demo accounts into user_repo (idempotent — skips existing)."""
     defaults = [
-        {
-            "id": "admin-001",
-            "name": "Admin User",
-            "email": "admin@mealmatch.dev",
-            "password": "Admin1234!",
-            "role": "admin",
-        },
-        {
-            "id": "rest-001",  # matches hardcoded restaurant_id in seed listings
-            "name": "Demo Restaurant",
-            "email": "restaurant@mealmatch.dev",
-            "password": "Restaurant1!",
-            "role": "restaurant",
-        },
-        {
-            "id": "recipient-001",
-            "name": "Demo Recipient",
-            "email": "recipient@mealmatch.dev",
-            "password": "Recipient1!",
-            "role": "recipient",
-        },
+        {"id": "admin-001",     "name": "Admin User",      "email": "admin@mealmatch.dev",      "password": "Admin1234!",   "role": "admin",      "ebt_verified": False, "ebt_last4": ""},
+        {"id": "rest-001",      "name": "Demo Restaurant", "email": "restaurant@mealmatch.dev", "password": "Restaurant1!", "role": "restaurant", "ebt_verified": False, "ebt_last4": ""},
+        {"id": "recipient-001", "name": "Demo Recipient",  "email": "recipient@mealmatch.dev",  "password": "Recipient1!",  "role": "recipient",  "ebt_verified": True,  "ebt_last4": "1201"},
+        {"id": "partner-001",   "name": "Demo Partner",    "email": "partner@mealmatch.dev",    "password": "Partner1234!", "role": "partner",    "ebt_verified": False, "ebt_last4": ""},
     ]
     for u in defaults:
-        _users[u["email"].lower()] = UserInDB(
+        if user_repo.get_by_email(u["email"]) is not None:
+            continue
+        user = UserInDB(
             id=u["id"],
             name=u["name"],
             email=u["email"],
             role=u["role"],
             hashed_password=_hash_pw(u["password"]),
-            ebt_verified=(u["role"] == "recipient"),
-            ebt_last4="1201" if u["role"] == "recipient" else "",
+            ebt_verified=u["ebt_verified"],
+            ebt_last4=u["ebt_last4"],
         )
+        user_repo.save(user.model_dump())
 
 
 _seed_users()
@@ -237,24 +262,9 @@ _seed_users()
 
 def _seed_ebt_records() -> None:
     defaults = [
-        {
-            "allowed_email": "recipient@mealmatch.dev",
-            "card_number": "6001000000001201",
-            "pin": "2468",
-            "label": "Seeded demo recipient",
-        },
-        {
-            "allowed_email": "alex.recipient@mealmatch.dev",
-            "card_number": "6001000000002202",
-            "pin": "1357",
-            "label": "Simulated signup recipient",
-        },
-        {
-            "allowed_email": "sam.recipient@mealmatch.dev",
-            "card_number": "6001000000003303",
-            "pin": "8642",
-            "label": "Simulated signup recipient",
-        },
+        {"allowed_email": "recipient@mealmatch.dev",       "card_number": "6001000000001201", "pin": "2468", "label": "Seeded demo recipient"},
+        {"allowed_email": "alex.recipient@mealmatch.dev",  "card_number": "6001000000002202", "pin": "1357", "label": "Simulated signup recipient"},
+        {"allowed_email": "sam.recipient@mealmatch.dev",   "card_number": "6001000000003303", "pin": "8642", "label": "Simulated signup recipient"},
     ]
     for record in defaults:
         _ebt_records[record["allowed_email"].lower()] = SimulatedEBTRecord(**record)
@@ -283,6 +293,7 @@ def _user_public(user: UserInDB) -> dict:
         id=user.id, name=user.name, email=user.email,
         role=user.role, location=user.location,
         ebt_verified=user.ebt_verified, ebt_last4=user.ebt_last4,
+        logo_url=user.logo_url,
     ).model_dump()
 
 
@@ -369,13 +380,13 @@ def get_current_user(token: str | None = Depends(oauth2_scheme)) -> UserInDB:
             status_code=401,
             detail={"code": "INVALID_TOKEN", "message": "Invalid or malformed token"},
         )
-    user = next((u for u in _users.values() if u.id == user_id), None)
-    if user is None:
+    user_dict = user_repo.get_by_id(user_id)
+    if user_dict is None:
         raise HTTPException(
             status_code=401,
             detail={"code": "USER_NOT_FOUND", "message": "User account no longer exists"},
         )
-    return user
+    return UserInDB(**user_dict)
 
 
 def require_roles(*roles: str):
@@ -401,7 +412,7 @@ def require_roles(*roles: str):
 @app.post("/api/v1/auth/signup", status_code=201)
 def signup(payload: UserCreate):
     email_key = payload.email.lower()
-    if email_key in _users:
+    if user_repo.get_by_email(email_key) is not None:
         raise HTTPException(
             status_code=409,
             detail={"code": "EMAIL_TAKEN", "message": "Email is already registered"},
@@ -432,18 +443,31 @@ def signup(payload: UserCreate):
         hashed_password=_hash_pw(payload.password),
         ebt_verified=ebt_verified,
         ebt_last4=ebt_last4,
+        logo_url=payload.logo_url,
     )
-    _users[email_key] = user
-    token = _create_token(user)
-    return ok_created(
-        {"access_token": token, "token_type": "bearer", "user": _user_public(user)},
-        "Account created successfully",
+    user_repo.save(user.model_dump())
+
+    logo_suggestion = (
+        _suggest_logo(payload.name) if payload.role == "restaurant" and not payload.logo_url
+        else ""
     )
+
+    response_data: dict = {
+        "access_token": _create_token(user),
+        "token_type": "bearer",
+        "user": _user_public(user),
+    }
+    if logo_suggestion:
+        response_data["logo_suggestion"] = logo_suggestion
+
+    return ok_created(response_data, "Account created successfully")
 
 
 @app.post("/api/v1/auth/login")
 def login(payload: UserLogin):
-    user = _users.get(payload.email.lower())
+    user_dict = user_repo.get_by_email(payload.email.lower())
+    user = UserInDB(**user_dict) if user_dict else None
+
     if not user or not _verify_pw(payload.password, user.hashed_password):
         _archive_login_attempt(
             email=payload.email,
@@ -457,9 +481,7 @@ def login(payload: UserLogin):
             detail={"code": "INVALID_CREDENTIALS", "message": "Invalid email or password"},
         )
 
-    ebt_needed = user.role == "recipient" and not user.ebt_verified
-
-    if ebt_needed:
+    if user.role == "recipient":
         _, code, message = _verify_ebt_for_email(
             user.email,
             payload.ebt_card_number,
@@ -479,11 +501,10 @@ def login(payload: UserLogin):
                 status_code=403 if code == "EBT_NOT_ELIGIBLE" else 401,
                 detail={"code": code, "message": message},
             )
-        refreshed_user = user.model_copy(
+        user = user.model_copy(
             update={"ebt_verified": True, "ebt_last4": _last4(payload.ebt_card_number)}
         )
-        _users[user.email.lower()] = refreshed_user
-        user = refreshed_user
+        user_repo.save(user.model_dump())
 
     token = _create_token(user)
     _archive_login_attempt(
@@ -492,7 +513,7 @@ def login(payload: UserLogin):
         success=True,
         code="LOGIN_SUCCESS",
         message="Login successful",
-        requires_ebt=ebt_needed,
+        requires_ebt=(user.role == "recipient"),
         ebt_last4=user.ebt_last4,
     )
     return ok(
@@ -511,6 +532,7 @@ def get_me(current_user: UserInDB = Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 
 MAX_CLAIM_QUANTITY = 10
+MAX_BULK_CLAIM_QUANTITY = 50
 
 # ---------------------------------------------------------------------------
 # Business schemas
@@ -555,6 +577,7 @@ class Listing(BaseModel):
     lat: float | None = None
     lng: float | None = None
     pickup_slots: list[dict] = []
+    priority_window_end: datetime | None = None
 
 
 class Claim(BaseModel):
@@ -565,6 +588,9 @@ class Claim(BaseModel):
     claimed_at: datetime
     status: ClaimStatus
     slot_id: str | None = None
+    group_name: str = ""
+    contact_info: str = ""
+    is_bulk: bool = False
 
 
 class ListingCreate(BaseModel):
@@ -580,12 +606,21 @@ class ListingCreate(BaseModel):
     lat: float | None = None
     lng: float | None = None
     pickup_slots: list[PickupSlotCreate] = []
+    priority_window_minutes: int = Field(default=0, ge=0)
 
 
 class ClaimCreate(BaseModel):
     user_id: str
     claimed_quantity: int = Field(gt=0)
     slot_id: str | None = None
+
+
+class BulkClaimCreate(BaseModel):
+    user_id: str
+    claimed_quantity: int = Field(gt=0, le=MAX_BULK_CLAIM_QUANTITY)
+    slot_id: str | None = None
+    group_name: str = Field(default="", max_length=100)
+    contact_info: str = Field(default="", max_length=200)
 
 
 class StatusUpdate(BaseModel):
@@ -601,37 +636,87 @@ class AdminStats(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# In-memory storage
+# In-memory business storage
 # ---------------------------------------------------------------------------
 
 _claim_lock = threading.Lock()
 
 _now = datetime.now(timezone.utc)
 
+
+def _future(hours: float) -> datetime:
+    return _now + timedelta(hours=hours)
+
+
 listings: dict[str, Listing] = {
     "seed-1": Listing(
-        id="seed-1",
-        restaurant_id="rest-001",
+        id="seed-1", restaurant_id="rest-001",
         title="Leftover Pasta Bolognese",
         description="~20 portions of freshly made pasta bolognese. Pick up before close.",
-        quantity=20,
-        dietary_tags=["gluten", "dairy-free"],
+        quantity=20, dietary_tags=["gluten", "dairy-free"],
         pickup_start=_now.replace(hour=18, minute=0, second=0, microsecond=0),
         pickup_end=_now.replace(hour=21, minute=0, second=0, microsecond=0),
-        status=ListingStatus.active,
-        created_at=_now,
+        status=ListingStatus.active, created_at=_now,
     ),
     "seed-2": Listing(
-        id="seed-2",
-        restaurant_id="rest-002",
+        id="seed-2", restaurant_id="rest-002",
         title="Assorted Sandwiches",
         description="Individually wrapped turkey and veggie sandwiches, about 30 available.",
-        quantity=30,
-        dietary_tags=["vegetarian-option", "nut-free"],
+        quantity=30, dietary_tags=["vegetarian-option", "nut-free"],
         pickup_start=_now.replace(hour=15, minute=0, second=0, microsecond=0),
         pickup_end=_now.replace(hour=17, minute=30, second=0, microsecond=0),
-        status=ListingStatus.active,
-        created_at=_now,
+        status=ListingStatus.active, created_at=_now,
+    ),
+    "seed-3": Listing(
+        id="seed-3", restaurant_id="rest-001",
+        title="Vegan Buddha Bowls",
+        description="Grain bowls with roasted chickpeas, quinoa, and tahini. 12 portions.",
+        quantity=12, dietary_tags=["vegan", "gluten-free", "nut-free"],
+        pickup_start=_future(1), pickup_end=_future(3),
+        status=ListingStatus.active, created_at=_now,
+    ),
+    "seed-4": Listing(
+        id="seed-4", restaurant_id="rest-003",
+        title="Halal Chicken Rice Boxes",
+        description="Freshly cooked halal chicken over basmati. 8 individual boxes ready.",
+        quantity=8, dietary_tags=["halal"],
+        pickup_start=_future(0.5), pickup_end=_future(2),
+        status=ListingStatus.active, created_at=_now,
+    ),
+    "seed-5": Listing(
+        id="seed-5", restaurant_id="rest-002",
+        title="Assorted Bakery Items",
+        description="Day-old muffins, croissants, and loaves. About 40 items.",
+        quantity=40, dietary_tags=["vegetarian", "contains_dairy"],
+        pickup_start=_future(0.25), pickup_end=_future(1.5),
+        status=ListingStatus.active, created_at=_now,
+    ),
+    "seed-6": Listing(
+        id="seed-6", restaurant_id="rest-004",
+        title="Mixed Salads — Catering Surplus",
+        description="Caesar, Greek, and garden salads from a cancelled corporate order. 25 portions.",
+        quantity=25, dietary_tags=["vegetarian", "gluten-free"],
+        pickup_start=_future(1), pickup_end=_future(2.5),
+        status=ListingStatus.active, created_at=_now,
+        address="123 Campus Dr, College Park MD",
+        location_name="Student Union Catering",
+        lat=38.9872, lng=-76.9426,
+    ),
+    "seed-7": Listing(
+        id="seed-7", restaurant_id="rest-001",
+        title="Lentil Soup — Vegan",
+        description="Large pot of red lentil soup with flatbreads. 15 servings.",
+        quantity=15, dietary_tags=["vegan", "halal", "gluten-free"],
+        pickup_start=_future(2), pickup_end=_future(4),
+        status=ListingStatus.active, created_at=_now,
+    ),
+    "seed-8": Listing(
+        id="seed-8", restaurant_id="rest-005",
+        title="Sushi Platters",
+        description="Surplus sushi rolls from lunch service — 6 platters, ~48 pieces each.",
+        quantity=6, dietary_tags=["gluten-free"],
+        pickup_start=_future(0.1), pickup_end=_future(0.75),
+        status=ListingStatus.active, created_at=_now,
     ),
 }
 
@@ -662,6 +747,9 @@ def _to_response_dict(listing: Listing) -> dict:
     d = _listing_dict(listing, urgent=is_urgent)
     if listing.lat is not None and listing.lng is not None:
         d["location"] = {"lat": listing.lat, "lng": listing.lng}
+    ms, reasons = _match_score(listing)
+    d["match_score"] = ms
+    d["match_reasons"] = reasons
     return d
 
 
@@ -706,14 +794,14 @@ def create_listing(
             detail={"code": "INVALID_PICKUP_WINDOW", "message": "pickup_end must be after pickup_start"},
         )
     slot_dicts = [
-        {
-            "id": str(uuid4()),
-            "label": s.label,
-            "pickup_start": s.pickup_start.isoformat(),
-            "pickup_end": s.pickup_end.isoformat(),
-        }
+        {"id": str(uuid4()), "label": s.label,
+         "pickup_start": s.pickup_start.isoformat(), "pickup_end": s.pickup_end.isoformat()}
         for s in payload.pickup_slots
     ]
+    priority_window_end = (
+        datetime.now(timezone.utc) + timedelta(minutes=payload.priority_window_minutes)
+        if payload.priority_window_minutes > 0 else None
+    )
     listing = Listing(
         id=str(uuid4()),
         restaurant_id=payload.restaurant_id,
@@ -730,6 +818,7 @@ def create_listing(
         lat=payload.lat,
         lng=payload.lng,
         pickup_slots=slot_dicts,
+        priority_window_end=priority_window_end,
     )
     listings[listing.id] = listing
     return ok_created(_to_response_dict(listing), "Listing created successfully")
@@ -739,61 +828,59 @@ def create_listing(
 def claim_listing(
     listing_id: str,
     payload: ClaimCreate,
-    current_user: UserInDB = Depends(require_roles("recipient", "admin")),
+    current_user: UserInDB = Depends(require_roles("recipient", "admin", "partner")),
 ):
     with _claim_lock:
         listing = listings.get(listing_id)
         if not listing:
-            raise HTTPException(
-                status_code=404,
-                detail={"code": "NOT_FOUND", "message": "Listing not found"},
-            )
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Listing not found"})
         _expire_listings()
         listing = listings[listing_id]
 
         if listing.status != ListingStatus.active:
             raise HTTPException(
                 status_code=409,
-                detail={
-                    "code": "UNCLAIMABLE_STATUS",
-                    "message": f"Listing cannot be claimed — current status: '{listing.status.value}'",
-                },
+                detail={"code": "UNCLAIMABLE_STATUS",
+                        "message": f"Listing cannot be claimed — current status: '{listing.status.value}'"},
             )
+
+        # Priority window: only partners/admins can claim before it expires
+        now = datetime.now(timezone.utc)
+        if (
+            listing.priority_window_end is not None
+            and now < listing.priority_window_end
+            and current_user.role not in ("partner", "admin")
+        ):
+            mins_left = int((listing.priority_window_end - now).total_seconds() / 60)
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "PRIORITY_WINDOW_ACTIVE",
+                        "message": f"This listing is in a partner-only priority window for {mins_left} more minute(s)"},
+            )
+
         already_claimed = any(
             c.user_id == payload.user_id and c.listing_id == listing_id and c.status == "confirmed"
             for c in claims.values()
         )
         if already_claimed:
-            raise HTTPException(
-                status_code=409,
-                detail={"code": "ALREADY_CLAIMED", "message": "You have already claimed this listing"},
-            )
-        # Validate pickup slot when listing defines slots
+            raise HTTPException(status_code=409, detail={"code": "ALREADY_CLAIMED", "message": "You have already claimed this listing"})
+
         if listing.pickup_slots:
             valid_slot_ids = {s["id"] for s in listing.pickup_slots}
             if not payload.slot_id or payload.slot_id not in valid_slot_ids:
                 raise HTTPException(
                     status_code=422,
-                    detail={
-                        "code": "SLOT_REQUIRED",
-                        "message": "A valid pickup slot must be selected for this listing",
-                    },
+                    detail={"code": "SLOT_REQUIRED", "message": "A valid pickup slot must be selected for this listing"},
                 )
         if payload.claimed_quantity > MAX_CLAIM_QUANTITY:
             raise HTTPException(
                 status_code=422,
-                detail={
-                    "code": "OVER_QUANTITY",
-                    "message": f"Cannot claim more than {MAX_CLAIM_QUANTITY} items per request",
-                },
+                detail={"code": "OVER_QUANTITY", "message": f"Cannot claim more than {MAX_CLAIM_QUANTITY} items per request"},
             )
         if payload.claimed_quantity > listing.quantity:
             raise HTTPException(
                 status_code=422,
-                detail={
-                    "code": "OVER_QUANTITY",
-                    "message": f"Requested quantity exceeds available ({listing.quantity} remaining)",
-                },
+                detail={"code": "OVER_QUANTITY", "message": f"Requested quantity exceeds available ({listing.quantity} remaining)"},
             )
         claim = Claim(
             id=str(uuid4()),
@@ -806,11 +893,72 @@ def claim_listing(
         )
         claims[claim.id] = claim
         new_quantity = listing.quantity - payload.claimed_quantity
-        # First successful claim locks the listing — no further claims by anyone
-        new_status = ListingStatus.claimed
-        updated = listing.model_copy(update={"quantity": new_quantity, "status": new_status})
+        updated = listing.model_copy(update={"quantity": new_quantity, "status": ListingStatus.claimed})
         listings[listing_id] = updated
         return ok(_listing_dict(updated), "Listing claimed successfully")
+
+
+@app.post("/api/v1/listings/{listing_id}/bulk-claim")
+def bulk_claim_listing(
+    listing_id: str,
+    payload: BulkClaimCreate,
+    current_user: UserInDB = Depends(require_roles("partner", "admin")),
+):
+    """
+    Partner/admin bulk claim (up to 50 items). Stores group_name + contact_info
+    for coordinated community pickup logistics.
+    """
+    with _claim_lock:
+        listing = listings.get(listing_id)
+        if not listing:
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Listing not found"})
+        _expire_listings()
+        listing = listings[listing_id]
+
+        if listing.status != ListingStatus.active:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "UNCLAIMABLE_STATUS",
+                        "message": f"Listing cannot be claimed — current status: '{listing.status.value}'"},
+            )
+        already_claimed = any(
+            c.user_id == payload.user_id and c.listing_id == listing_id and c.status == "confirmed"
+            for c in claims.values()
+        )
+        if already_claimed:
+            raise HTTPException(status_code=409, detail={"code": "ALREADY_CLAIMED", "message": "This partner has already claimed this listing"})
+
+        if listing.pickup_slots:
+            valid_slot_ids = {s["id"] for s in listing.pickup_slots}
+            if not payload.slot_id or payload.slot_id not in valid_slot_ids:
+                raise HTTPException(status_code=422, detail={"code": "SLOT_REQUIRED", "message": "A valid pickup slot must be selected"})
+
+        if payload.claimed_quantity > listing.quantity:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "OVER_QUANTITY", "message": f"Requested quantity exceeds available ({listing.quantity} remaining)"},
+            )
+        claim = Claim(
+            id=str(uuid4()),
+            listing_id=listing_id,
+            user_id=payload.user_id,
+            claimed_quantity=payload.claimed_quantity,
+            claimed_at=datetime.now(timezone.utc),
+            status="confirmed",
+            slot_id=payload.slot_id,
+            group_name=payload.group_name,
+            contact_info=payload.contact_info,
+            is_bulk=True,
+        )
+        claims[claim.id] = claim
+        updated = listing.model_copy(
+            update={"quantity": listing.quantity - payload.claimed_quantity, "status": ListingStatus.claimed}
+        )
+        listings[listing_id] = updated
+        return ok(
+            {"claim": claim.model_dump(mode="json"), "listing": _listing_dict(updated)},
+            "Bulk claim registered successfully",
+        )
 
 
 @app.patch("/api/v1/listings/{listing_id}/status")
@@ -821,10 +969,7 @@ def update_listing_status(
 ):
     listing = listings.get(listing_id)
     if not listing:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "NOT_FOUND", "message": "Listing not found"},
-        )
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Listing not found"})
     allowed = ALLOWED_TRANSITIONS.get(listing.status, set())
     if payload.status not in allowed:
         raise HTTPException(
@@ -851,11 +996,25 @@ def delete_listing(
 ):
     listing = listings.pop(listing_id, None)
     if not listing:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "NOT_FOUND", "message": "Listing not found"},
-        )
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Listing not found"})
     return ok(_listing_dict(listing), "Listing deleted successfully")
+
+
+# ---------------------------------------------------------------------------
+# Demand prediction  (restaurant / admin only)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/listings/{listing_id}/demand-prediction")
+def get_demand_prediction(
+    listing_id: str,
+    _: UserInDB = Depends(require_roles("restaurant", "admin")),
+):
+    listing = listings.get(listing_id)
+    if not listing:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Listing not found"})
+    prediction = predict_demand(listing)
+    return ok(prediction.to_dict(), "Demand prediction generated")
 
 
 # ---------------------------------------------------------------------------
@@ -869,7 +1028,7 @@ def get_claims(_: UserInDB = Depends(require_roles("admin"))):
 
 
 @app.get("/api/v1/my-claims")
-def get_my_claims(current_user: UserInDB = Depends(require_roles("recipient", "admin"))):
+def get_my_claims(current_user: UserInDB = Depends(require_roles("recipient", "admin", "partner"))):
     """Return all claims belonging to the current user, with embedded listing snapshot."""
     user_claims = []
     for c in claims.values():
@@ -885,27 +1044,19 @@ def get_my_claims(current_user: UserInDB = Depends(require_roles("recipient", "a
 @app.delete("/api/v1/claims/{claim_id}")
 def cancel_claim(
     claim_id: str,
-    current_user: UserInDB = Depends(require_roles("recipient", "admin")),
+    current_user: UserInDB = Depends(require_roles("recipient", "admin", "partner")),
 ):
     """Cancel a confirmed claim. Restores listing quantity; revives 'claimed' listings to 'active'."""
     claim = claims.get(claim_id)
     if not claim:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "NOT_FOUND", "message": "Claim not found"},
-        )
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Claim not found"})
     if current_user.role != "admin" and claim.user_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "FORBIDDEN", "message": "You can only cancel your own claims"},
-        )
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "You can only cancel your own claims"})
     if claim.status != "confirmed":
         raise HTTPException(
             status_code=409,
-            detail={
-                "code": "NOT_CANCELLABLE",
-                "message": f"Only confirmed claims can be cancelled (current status: '{claim.status}')",
-            },
+            detail={"code": "NOT_CANCELLABLE",
+                    "message": f"Only confirmed claims can be cancelled (current status: '{claim.status}')"},
         )
     with _claim_lock:
         updated_claim = claim.model_copy(update={"status": "cancelled"})
@@ -913,11 +1064,8 @@ def cancel_claim(
         listing = listings.get(claim.listing_id)
         if listing:
             restored_qty = listing.quantity + claim.claimed_quantity
-            # Only revive to active if it was fully-claimed (not time-expired)
             new_status = (
-                ListingStatus.active
-                if listing.status == ListingStatus.claimed
-                else listing.status
+                ListingStatus.active if listing.status == ListingStatus.claimed else listing.status
             )
             listings[claim.listing_id] = listing.model_copy(
                 update={"quantity": restored_qty, "status": new_status}

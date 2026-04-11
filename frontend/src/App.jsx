@@ -20,6 +20,7 @@ import RecipientFeed from './components/RecipientFeed'
 import RestaurantDashboard from './RestaurantDashboard'
 import AdminDashboard from './AdminDashboard'
 import MyClaimsPage from './pages/MyClaimsPage'
+import PartnerPage from './pages/PartnerPage'
 
 import { getHealth } from './api/client'
 import './App.css'
@@ -63,6 +64,7 @@ function AppShell() {
     { key: 'my-claims',  label: 'My Claims',          path: '/my-claims',   roles: ['recipient'] },
     { key: 'restaurant', label: 'Restaurant Portal',  path: '/restaurant',  roles: ['restaurant', 'admin'] },
     { key: 'admin',      label: 'Admin',              path: '/admin',       roles: ['admin'] },
+    { key: 'partner',    label: 'Partner Portal',     path: '/partner',     roles: ['partner', 'admin'] },
   ]
   const visibleTabs = allTabs.filter(t => t.roles.includes(user?.role))
   const activeKey = visibleTabs.find(t => location.pathname.startsWith(t.path))?.key
@@ -195,6 +197,15 @@ export default function App() {
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <AdminDashboard />
+                </ProtectedRoute>
+              }
+            />
+            {/* Partner portal: partner + admin */}
+            <Route
+              path="partner"
+              element={
+                <ProtectedRoute allowedRoles={['partner', 'admin']}>
+                  <PartnerPage />
                 </ProtectedRoute>
               }
             />

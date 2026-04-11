@@ -3,6 +3,7 @@ import {
   getAdminListings,
   createListing,
   updateListingStatus,
+  getDemandPrediction,
 } from "./api/client";
 import { useAuth } from "./auth/useAuth";
 
@@ -40,6 +41,7 @@ export default function RestaurantDashboard() {
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [customDietaryTag, setCustomDietaryTag] = useState("");
+  const [predictions, setPredictions] = useState({}); // listingId → DemandPrediction
 
   const { user } = useAuth();
   const restaurantId = user?.id || "rest-001";
@@ -210,6 +212,15 @@ export default function RestaurantDashboard() {
       setError(err.message || "Something went wrong while creating the listing.");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleFetchPrediction(listingId) {
+    try {
+      const data = await getDemandPrediction(listingId);
+      setPredictions((prev) => ({ ...prev, [listingId]: data }));
+    } catch {
+      // silently ignore — prediction is non-blocking
     }
   }
 
@@ -663,20 +674,47 @@ export default function RestaurantDashboard() {
                   </div>
 
                   {selectedTab === "active" ? (
-                    <div style={styles.cardActions}>
-                      <button
-                        onClick={() => handleStatusUpdate(listing.id, "claimed")}
-                        style={styles.claimButton}
-                      >
-                        Mark Claimed
-                      </button>
-                      <button
-                        onClick={() => handleStatusUpdate(listing.id, "expired")}
-                        style={styles.expireButton}
-                      >
-                        Mark Expired
-                      </button>
-                    </div>
+                    <>
+                      {predictions[listing.id] && (
+                        <div style={predictionBoxStyle}>
+                          <span style={predictionLabelStyle}>Demand prediction</span>
+                          <span style={predictionProbStyle}>
+                            {Math.round(predictions[listing.id].claim_probability * 100)}% claim probability
+                          </span>
+                          <span style={predictionEtaStyle}>
+                            Est. {predictions[listing.id].estimated_minutes_to_claim} min to claim ·{" "}
+                            <em>{predictions[listing.id].confidence} confidence</em>
+                          </span>
+                          {predictions[listing.id].factors?.length > 0 && (
+                            <ul style={predictionFactorListStyle}>
+                              {predictions[listing.id].factors.map((f, i) => (
+                                <li key={i}>{f}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
+                      <div style={styles.cardActions}>
+                        <button
+                          onClick={() => handleFetchPrediction(listing.id)}
+                          style={predictBtnStyle}
+                        >
+                          Predict Demand
+                        </button>
+                        <button
+                          onClick={() => handleStatusUpdate(listing.id, "claimed")}
+                          style={styles.claimButton}
+                        >
+                          Mark Claimed
+                        </button>
+                        <button
+                          onClick={() => handleStatusUpdate(listing.id, "expired")}
+                          style={styles.expireButton}
+                        >
+                          Mark Expired
+                        </button>
+                      </div>
+                    </>
                   ) : null}
                 </div>
               ))}
@@ -1189,6 +1227,47 @@ const addSlotBtnStyle = {
   fontWeight: 700,
   cursor: "pointer",
   alignSelf: "flex-start",
+};
+
+const predictBtnStyle = {
+  padding: "8px 14px",
+  borderRadius: 10,
+  border: "1px solid rgba(168,85,247,0.3)",
+  background: "rgba(168,85,247,0.1)",
+  color: "#c084fc",
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: "pointer",
+  fontFamily: "inherit",
+};
+
+const predictionBoxStyle = {
+  marginBottom: 12,
+  padding: "12px 16px",
+  borderRadius: 12,
+  background: "rgba(168,85,247,0.08)",
+  border: "1px solid rgba(168,85,247,0.2)",
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+};
+
+const predictionLabelStyle = {
+  fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em",
+  color: "#a855f7", fontWeight: 700,
+};
+
+const predictionProbStyle = {
+  fontSize: 16, fontWeight: 800, color: "#e9d5ff",
+};
+
+const predictionEtaStyle = {
+  fontSize: 13, color: "#c084fc",
+};
+
+const predictionFactorListStyle = {
+  margin: "4px 0 0", paddingLeft: 18, fontSize: 12, color: "#a78bfa",
+  lineHeight: 1.6,
 };
 
 // ---------------------------------------------------------------------------

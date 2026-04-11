@@ -172,6 +172,20 @@ export function claimListing(listingId, userId, claimedQuantity, slotId = null) 
   return post(`/api/v1/listings/${listingId}/claim`, body)
 }
 
+export function bulkClaimListing(listingId, userId, claimedQuantity, options = {}) {
+  return post(`/api/v1/listings/${listingId}/bulk-claim`, {
+    user_id: userId,
+    claimed_quantity: claimedQuantity,
+    slot_id: options.slotId || null,
+    group_name: options.groupName || '',
+    contact_info: options.contactInfo || '',
+  })
+}
+
+export function getDemandPrediction(listingId) {
+  return request(`/api/v1/listings/${listingId}/demand-prediction`)
+}
+
 export function updateListingStatus(listingId, status) {
   return patch(`/api/v1/listings/${listingId}/status`, { status })
 }
