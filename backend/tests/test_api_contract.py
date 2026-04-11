@@ -280,15 +280,16 @@ class TestClaimFlow:
         listings["t1"] = make_listing("t1", quantity=10)
         data = claim_via_api("t1", "u1", 4)
         assert data["quantity"] == 6
-        assert data["status"] == "active"
+        # First claim always locks the listing regardless of remaining quantity
+        assert data["status"] == "claimed"
 
-    def test_partial_claim_reflected_in_public_feed(self):
+    def test_partial_claim_removes_from_public_feed(self):
+        """After first claim the listing is locked and absent from the active feed."""
         listings["t1"] = make_listing("t1", quantity=10)
         claim_via_api("t1", "u1", 4)
         res = client.get("/api/v1/listings")
         feed = {l["id"]: l for l in res.json()["data"]}
-        assert "t1" in feed
-        assert feed["t1"]["quantity"] == 6
+        assert "t1" not in feed
 
     def test_full_claim_sets_quantity_zero_and_status_claimed(self):
         listings["t1"] = make_listing("t1", quantity=3)
@@ -331,21 +332,28 @@ class TestClaimFlow:
         assert claim_list[0]["user_id"] == "u1"
         assert claim_list[0]["claimed_quantity"] == 2
 
-    def test_multiple_partial_claims_accumulate(self):
+    def test_first_claim_locks_listing_for_other_users(self):
+        """First successful claim marks listing as claimed, blocking all subsequent claims."""
         listings["t1"] = make_listing("t1", quantity=9)
         claim_via_api("t1", "u1", 3)
-        claim_via_api("t1", "u2", 3)
-        claim_via_api("t1", "u3", 3)
-        assert listings["t1"].quantity == 0
         assert listings["t1"].status == ListingStatus.claimed
-        assert len(claims) == 3
+        assert len(claims) == 1
+        # u2 and u3 should be blocked
+        for uid in ("u2", "u3"):
+            res = client.post(
+                "/api/v1/listings/t1/claim",
+                json={"user_id": uid, "claimed_quantity": 3},
+            )
+            assert res.status_code == 409
+            assert res.json()["error"]["code"] == "UNCLAIMABLE_STATUS"
 
     def test_admin_stats_total_claims_increments(self):
         listings["t1"] = make_listing("t1", quantity=10)
+        listings["t2"] = make_listing("t2", quantity=10)
         res_before = client.get("/api/v1/admin/stats")
         assert res_before.json()["data"]["total_claims"] == 0
         claim_via_api("t1", "u1", 1)
-        claim_via_api("t1", "u2", 1)
+        claim_via_api("t2", "u2", 1)
         res_after = client.get("/api/v1/admin/stats")
         assert res_after.json()["data"]["total_claims"] == 2
 
@@ -427,14 +435,16 @@ class TestInvalidClaims:
         assert res.json()["error"]["code"] == "NOT_FOUND"
 
     def test_duplicate_claim_rejected(self):
+        """Same user re-claiming gets UNCLAIMABLE_STATUS because listing is locked after first claim."""
         listings["t1"] = make_listing("t1", quantity=10)
         claim_via_api("t1", "u1", 1)
+        assert listings["t1"].status == ListingStatus.claimed
         res = client.post(
             "/api/v1/listings/t1/claim",
             json={"user_id": "u1", "claimed_quantity": 1},
         )
         assert res.status_code == 409
-        assert res.json()["error"]["code"] == "ALREADY_CLAIMED"
+        assert res.json()["error"]["code"] == "UNCLAIMABLE_STATUS"
 
     def test_over_available_quantity_rejected(self):
         listings["t1"] = make_listing("t1", quantity=5)
@@ -490,7 +500,8 @@ class TestInvalidClaims:
         assert res.status_code == 409
         assert res.json()["error"]["code"] == "UNCLAIMABLE_STATUS"
 
-    def test_different_users_can_partial_claim_same_listing(self):
+    def test_second_user_blocked_after_first_claim(self):
+        """Once u1 claims, the listing is locked; u2 gets 409 UNCLAIMABLE_STATUS."""
         listings["t1"] = make_listing("t1", quantity=10)
         r1 = client.post(
             "/api/v1/listings/t1/claim",
@@ -501,8 +512,9 @@ class TestInvalidClaims:
             json={"user_id": "u2", "claimed_quantity": 3},
         )
         assert r1.status_code == 200
-        assert r2.status_code == 200
-        assert r2.json()["data"]["quantity"] == 4
+        assert r1.json()["data"]["status"] == "claimed"
+        assert r2.status_code == 409
+        assert r2.json()["error"]["code"] == "UNCLAIMABLE_STATUS"
 
 
 # ---------------------------------------------------------------------------
@@ -760,6 +772,100 @@ class TestAddressFields:
 
 
 # ---------------------------------------------------------------------------
+# Pickup slots
+# ---------------------------------------------------------------------------
+
+
+class TestPickupSlots:
+    def _now(self):
+        return datetime.now(timezone.utc)
+
+    def _listing_with_slots(self, **overrides):
+        now = self._now()
+        base = {
+            "restaurant_id": "rest-1",
+            "title": "Slotted Food",
+            "description": "Pickup by slot",
+            "quantity": 5,
+            "dietary_tags": [],
+            "pickup_start": (now + timedelta(hours=1)).isoformat(),
+            "pickup_end": (now + timedelta(hours=3)).isoformat(),
+            "pickup_slots": [
+                {
+                    "label": "12pm – 1pm",
+                    "pickup_start": (now + timedelta(hours=1)).isoformat(),
+                    "pickup_end": (now + timedelta(hours=2)).isoformat(),
+                },
+                {
+                    "label": "1pm – 2pm",
+                    "pickup_start": (now + timedelta(hours=2)).isoformat(),
+                    "pickup_end": (now + timedelta(hours=3)).isoformat(),
+                },
+            ],
+        }
+        base.update(overrides)
+        return base
+
+    def test_create_listing_with_slots_returns_slot_ids(self):
+        res = client.post("/api/v1/listings", json=self._listing_with_slots())
+        assert res.status_code == 201
+        data = res.json()["data"]
+        assert len(data["pickup_slots"]) == 2
+        assert all("id" in s for s in data["pickup_slots"])
+        assert data["pickup_slots"][0]["label"] == "12pm – 1pm"
+
+    def test_slots_persisted_in_public_feed(self):
+        created = client.post("/api/v1/listings", json=self._listing_with_slots()).json()["data"]
+        feed = {l["id"]: l for l in client.get("/api/v1/listings").json()["data"]}
+        assert len(feed[created["id"]]["pickup_slots"]) == 2
+
+    def test_claim_with_valid_slot_succeeds(self):
+        created = client.post("/api/v1/listings", json=self._listing_with_slots()).json()["data"]
+        slot_id = created["pickup_slots"][0]["id"]
+        res = client.post(
+            f"/api/v1/listings/{created['id']}/claim",
+            json={"user_id": "u1", "claimed_quantity": 1, "slot_id": slot_id},
+        )
+        assert res.status_code == 200
+
+    def test_claim_without_slot_when_slots_required_fails(self):
+        created = client.post("/api/v1/listings", json=self._listing_with_slots()).json()["data"]
+        res = client.post(
+            f"/api/v1/listings/{created['id']}/claim",
+            json={"user_id": "u1", "claimed_quantity": 1},
+        )
+        assert res.status_code == 422
+        assert res.json()["error"]["code"] == "SLOT_REQUIRED"
+
+    def test_claim_with_invalid_slot_id_fails(self):
+        created = client.post("/api/v1/listings", json=self._listing_with_slots()).json()["data"]
+        res = client.post(
+            f"/api/v1/listings/{created['id']}/claim",
+            json={"user_id": "u1", "claimed_quantity": 1, "slot_id": "bad-slot-id"},
+        )
+        assert res.status_code == 422
+        assert res.json()["error"]["code"] == "SLOT_REQUIRED"
+
+    def test_no_slot_required_for_listing_without_slots(self):
+        created = create_listing_via_api()
+        res = client.post(
+            f"/api/v1/listings/{created['id']}/claim",
+            json={"user_id": "u1", "claimed_quantity": 1},
+        )
+        assert res.status_code == 200
+
+    def test_slot_id_stored_on_claim(self):
+        created = client.post("/api/v1/listings", json=self._listing_with_slots()).json()["data"]
+        slot_id = created["pickup_slots"][1]["id"]
+        client.post(
+            f"/api/v1/listings/{created['id']}/claim",
+            json={"user_id": "u1", "claimed_quantity": 1, "slot_id": slot_id},
+        )
+        claim = list(claims.values())[0]
+        assert claim.slot_id == slot_id
+
+
+# ---------------------------------------------------------------------------
 # Concurrency
 # ---------------------------------------------------------------------------
 
@@ -784,7 +890,8 @@ class TestAtomicClaim:
 
         assert results.count(200) == 1, f"Expected 1 success; results={results}"
 
-    def test_concurrent_partial_claims_are_atomic(self):
+    def test_concurrent_claims_only_first_wins(self):
+        """Under concurrent load exactly 1 claim succeeds; first-claim-locks the listing."""
         listings["t1"] = make_listing("t1", quantity=5)
         results = []
         lock = threading.Lock()
@@ -803,6 +910,5 @@ class TestAtomicClaim:
         for t in threads:
             t.join()
 
-        assert results.count(200) == 5, f"Expected 5 successes; results={results}"
-        assert listings["t1"].quantity == 0
+        assert results.count(200) == 1, f"Expected 1 success; results={results}"
         assert listings["t1"].status == ListingStatus.claimed

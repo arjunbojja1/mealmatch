@@ -531,6 +531,12 @@ ALLOWED_TRANSITIONS: dict[ListingStatus, set[ListingStatus]] = {
 ClaimStatus = Literal["pending", "confirmed", "cancelled"]
 
 
+class PickupSlotCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=100)
+    pickup_start: datetime
+    pickup_end: datetime
+
+
 class Listing(BaseModel):
     id: str
     restaurant_id: str
@@ -546,6 +552,7 @@ class Listing(BaseModel):
     location_name: str = ""
     lat: float | None = None
     lng: float | None = None
+    pickup_slots: list[dict] = []
 
 
 class Claim(BaseModel):
@@ -555,6 +562,7 @@ class Claim(BaseModel):
     claimed_quantity: int
     claimed_at: datetime
     status: ClaimStatus
+    slot_id: str | None = None
 
 
 class ListingCreate(BaseModel):
@@ -569,11 +577,13 @@ class ListingCreate(BaseModel):
     location_name: str = ""
     lat: float | None = None
     lng: float | None = None
+    pickup_slots: list[PickupSlotCreate] = []
 
 
 class ClaimCreate(BaseModel):
     user_id: str
     claimed_quantity: int = Field(gt=0)
+    slot_id: str | None = None
 
 
 class StatusUpdate(BaseModel):
@@ -693,6 +703,15 @@ def create_listing(
             status_code=422,
             detail={"code": "INVALID_PICKUP_WINDOW", "message": "pickup_end must be after pickup_start"},
         )
+    slot_dicts = [
+        {
+            "id": str(uuid4()),
+            "label": s.label,
+            "pickup_start": s.pickup_start.isoformat(),
+            "pickup_end": s.pickup_end.isoformat(),
+        }
+        for s in payload.pickup_slots
+    ]
     listing = Listing(
         id=str(uuid4()),
         restaurant_id=payload.restaurant_id,
@@ -708,6 +727,7 @@ def create_listing(
         location_name=payload.location_name,
         lat=payload.lat,
         lng=payload.lng,
+        pickup_slots=slot_dicts,
     )
     listings[listing.id] = listing
     return ok_created(_to_response_dict(listing), "Listing created successfully")
@@ -746,6 +766,17 @@ def claim_listing(
                 status_code=409,
                 detail={"code": "ALREADY_CLAIMED", "message": "You have already claimed this listing"},
             )
+        # Validate pickup slot when listing defines slots
+        if listing.pickup_slots:
+            valid_slot_ids = {s["id"] for s in listing.pickup_slots}
+            if not payload.slot_id or payload.slot_id not in valid_slot_ids:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "SLOT_REQUIRED",
+                        "message": "A valid pickup slot must be selected for this listing",
+                    },
+                )
         if payload.claimed_quantity > MAX_CLAIM_QUANTITY:
             raise HTTPException(
                 status_code=422,
@@ -769,10 +800,12 @@ def claim_listing(
             claimed_quantity=payload.claimed_quantity,
             claimed_at=datetime.now(timezone.utc),
             status="confirmed",
+            slot_id=payload.slot_id,
         )
         claims[claim.id] = claim
         new_quantity = listing.quantity - payload.claimed_quantity
-        new_status = ListingStatus.claimed if new_quantity == 0 else listing.status
+        # First successful claim locks the listing — no further claims by anyone
+        new_status = ListingStatus.claimed
         updated = listing.model_copy(update={"quantity": new_quantity, "status": new_status})
         listings[listing_id] = updated
         return ok(_listing_dict(updated), "Listing claimed successfully")

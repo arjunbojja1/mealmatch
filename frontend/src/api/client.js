@@ -166,11 +166,10 @@ export function createListing(listing) {
   return post('/api/v1/listings', listing)
 }
 
-export function claimListing(listingId, userId, claimedQuantity) {
-  return post(`/api/v1/listings/${listingId}/claim`, {
-    user_id: userId,
-    claimed_quantity: claimedQuantity,
-  })
+export function claimListing(listingId, userId, claimedQuantity, slotId = null) {
+  const body = { user_id: userId, claimed_quantity: claimedQuantity }
+  if (slotId) body.slot_id = slotId
+  return post(`/api/v1/listings/${listingId}/claim`, body)
 }
 
 export function updateListingStatus(listingId, status) {

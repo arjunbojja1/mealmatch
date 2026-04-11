@@ -150,10 +150,25 @@ export default function MyClaimsPage() {
   )
 }
 
+const NAV_MODES = [
+  { key: 'driving',   label: 'Car',     icon: '🚗', travelmode: 'driving' },
+  { key: 'walking',   label: 'Walk',    icon: '🚶', travelmode: 'walking' },
+  { key: 'bicycling', label: 'Bike',    icon: '🚲', travelmode: 'bicycling' },
+  { key: 'transit',   label: 'Transit', icon: '🚌', travelmode: 'transit' },
+]
+
+function buildNavUrl(listing, travelmode) {
+  const dest = listing?.lat != null && listing?.lng != null
+    ? `${listing.lat},${listing.lng}`
+    : encodeURIComponent(listing?.address || listing?.location_name || '')
+  return `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=${travelmode}`
+}
+
 function ClaimCard({ claim, isCancelling, onCancel, onShowMap }) {
   const listing = claim.listing
   const statusStyle = STATUS_STYLE[claim.status] || STATUS_STYLE.pending
   const canCancel = claim.status === 'confirmed' && onCancel
+  const hasLocation = listing && (listing.address || listing.location_name || listing?.lat != null)
   const canShowOnMap = listing && (listing.address || listing.location?.lat != null)
 
   return (
@@ -166,6 +181,10 @@ function ClaimCard({ claim, isCancelling, onCancel, onShowMap }) {
               {listing.location_name || listing.address}
             </div>
           )}
+          {claim.slot_id && listing?.pickup_slots?.length > 0 && (() => {
+            const slot = listing.pickup_slots.find((s) => s.id === claim.slot_id)
+            return slot ? <div style={s.slotLine}>Slot: {slot.label}</div> : null
+          })()}
         </div>
         <span style={{ ...s.statusPill, ...statusStyle }}>{claim.status}</span>
       </div>
@@ -176,15 +195,32 @@ function ClaimCard({ claim, isCancelling, onCancel, onShowMap }) {
         {listing && <MetaBox label="Pickup ends" value={formatTime(listing.pickup_end)} small />}
       </div>
 
+      {hasLocation && (
+        <div style={s.navSection}>
+          <div style={s.navLabel}>Navigate</div>
+          <div style={s.navRow}>
+            {NAV_MODES.map((mode) => (
+              <a
+                key={mode.key}
+                href={buildNavUrl(listing, mode.travelmode)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={s.navBtn}
+              >
+                <span>{mode.icon}</span>
+                <span>{mode.label}</span>
+              </a>
+            ))}
+            {canShowOnMap && (
+              <button onClick={() => onShowMap(listing)} style={s.navMapBtn}>
+                🗺 Map
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div style={s.cardFooter}>
-        {canShowOnMap && (
-          <button
-            onClick={() => onShowMap(listing)}
-            style={s.showOnMapBtn}
-          >
-            Show on map
-          </button>
-        )}
         {canCancel && (
           <button
             onClick={() => onCancel(claim)}
@@ -323,6 +359,7 @@ const s = {
   cardInfo: { flex: 1, minWidth: 0 },
   listingTitle: { fontSize: 17, fontWeight: 700, color: '#f1f5f9', marginBottom: 4, lineHeight: 1.3 },
   locationLine: { fontSize: 13, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  slotLine: { fontSize: 12, color: '#7dd3fc', marginTop: 3, fontWeight: 600 },
   statusPill: {
     flexShrink: 0,
     padding: '6px 12px',
@@ -345,18 +382,38 @@ const s = {
   metaLabel: { color: '#64748b', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 },
   metaValue: { color: '#f8fafc', fontSize: 22, fontWeight: 800 },
   metaValueSmall: { color: '#e2e8f0', fontSize: 13, fontWeight: 600, lineHeight: 1.4 },
-  cardFooter: { display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' },
-  showOnMapBtn: {
-    padding: '9px 14px',
-    borderRadius: 12,
-    border: '1px solid rgba(249,115,22,0.3)',
-    background: 'rgba(249,115,22,0.1)',
+  navSection: { marginTop: 14 },
+  navLabel: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: '#64748b', marginBottom: 8 },
+  navRow: { display: 'flex', gap: 8, flexWrap: 'wrap' },
+  navBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+    padding: '7px 11px',
+    borderRadius: 10,
+    border: '1px solid rgba(249,115,22,0.28)',
+    background: 'rgba(249,115,22,0.08)',
     color: '#fdba74',
-    fontSize: 13,
+    fontSize: 12,
+    fontWeight: 600,
+    textDecoration: 'none',
+    cursor: 'pointer',
+  },
+  navMapBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+    padding: '7px 11px',
+    borderRadius: 10,
+    border: '1px solid rgba(96,165,250,0.28)',
+    background: 'rgba(96,165,250,0.08)',
+    color: '#7dd3fc',
+    fontSize: 12,
     fontWeight: 600,
     cursor: 'pointer',
     fontFamily: 'inherit',
   },
+  cardFooter: { display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', marginTop: 4 },
   cancelBtn: {
     padding: '9px 14px',
     borderRadius: 12,

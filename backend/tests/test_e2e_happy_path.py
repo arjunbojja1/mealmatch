@@ -26,7 +26,7 @@ def _now():
 
 
 class TestE2EHappyPath:
-    def test_full_lifecycle_partial_then_full_claim(self):
+    def test_full_lifecycle_first_claim_locks(self):
         now = _now()
 
         # 1. Create
@@ -52,47 +52,42 @@ class TestE2EHappyPath:
         assert any(l["id"] == listing_id for l in feed)
         assert next(l for l in feed if l["id"] == listing_id)["quantity"] == 5
 
-        # 3. User A partial claim (3 of 5)
+        # 3. User A claims (3 of 5) — first claim locks listing
         r_a = client.post(
             f"/api/v1/listings/{listing_id}/claim",
             json={"user_id": "user-a", "claimed_quantity": 3},
         )
         assert r_a.status_code == 200
         assert r_a.json()["data"]["quantity"] == 2
-        assert r_a.json()["data"]["status"] == "active"
+        assert r_a.json()["data"]["status"] == "claimed"
 
-        # Feed still shows it with reduced quantity
-        feed2 = {l["id"]: l for l in client.get("/api/v1/listings").json()["data"]}
-        assert feed2[listing_id]["quantity"] == 2
+        # 4. Public feed excludes it (listing is now claimed)
+        feed2_ids = [l["id"] for l in client.get("/api/v1/listings").json()["data"]]
+        assert listing_id not in feed2_ids
 
-        # 4. User B full claim (remaining 2)
+        # 5. User B is blocked — listing already claimed
         r_b = client.post(
             f"/api/v1/listings/{listing_id}/claim",
             json={"user_id": "user-b", "claimed_quantity": 2},
         )
-        assert r_b.status_code == 200
-        assert r_b.json()["data"]["quantity"] == 0
-        assert r_b.json()["data"]["status"] == "claimed"
-
-        # 5. Public feed excludes it
-        feed3_ids = [l["id"] for l in client.get("/api/v1/listings").json()["data"]]
-        assert listing_id not in feed3_ids
+        assert r_b.status_code == 409
+        assert r_b.json()["error"]["code"] == "UNCLAIMABLE_STATUS"
 
         # 6. Admin listings shows it as claimed
         admin = {l["id"]: l for l in client.get("/api/v1/admin/listings").json()["data"]}
         assert admin[listing_id]["status"] == "claimed"
-        assert admin[listing_id]["quantity"] == 0
+        assert admin[listing_id]["quantity"] == 2  # remaining (not decremented by rejected claim)
 
         # 7. Stats
         stats = client.get("/api/v1/admin/stats").json()["data"]
         assert stats["active_listings"] == 0
         assert stats["claimed_listings"] == 1
-        assert stats["total_claims"] == 2
+        assert stats["total_claims"] == 1
 
-        # 8. Claims endpoint
+        # 8. Claims endpoint — only user-a's claim
         claim_records = client.get("/api/v1/claims").json()["data"]
-        assert len(claim_records) == 2
-        assert {c["user_id"] for c in claim_records} == {"user-a", "user-b"}
+        assert len(claim_records) == 1
+        assert claim_records[0]["user_id"] == "user-a"
 
     def test_create_then_admin_expire_then_verify(self):
         now = _now()

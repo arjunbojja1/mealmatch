@@ -26,6 +26,7 @@ export default function RestaurantDashboard() {
     address: "",
     lat: null,
     lng: null,
+    pickup_slots: [],
   });
 
   const [listings, setListings] = useState([]);
@@ -78,6 +79,32 @@ export default function RestaurantDashboard() {
     setFormData((prev) => ({ ...prev, address: value, lat: null, lng: null }));
   }, []);
 
+  const handleAddSlot = useCallback(() => {
+    setFormData((prev) => ({
+      ...prev,
+      pickup_slots: [
+        ...prev.pickup_slots,
+        { tempId: Date.now(), label: "", pickup_start: "", pickup_end: "" },
+      ],
+    }));
+  }, []);
+
+  const handleRemoveSlot = useCallback((tempId) => {
+    setFormData((prev) => ({
+      ...prev,
+      pickup_slots: prev.pickup_slots.filter((s) => s.tempId !== tempId),
+    }));
+  }, []);
+
+  const handleSlotChange = useCallback((tempId, field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      pickup_slots: prev.pickup_slots.map((s) =>
+        s.tempId === tempId ? { ...s, [field]: value } : s
+      ),
+    }));
+  }, []);
+
   const handleAddressSelect = useCallback(({ address, lat, lng }) => {
     setFormData((prev) => ({ ...prev, address, lat, lng }));
   }, []);
@@ -123,6 +150,13 @@ export default function RestaurantDashboard() {
       address: formData.address.trim(),
       lat: formData.lat,
       lng: formData.lng,
+      pickup_slots: formData.pickup_slots
+        .filter((s) => s.label.trim() && s.pickup_start && s.pickup_end)
+        .map((s) => ({
+          label: s.label.trim(),
+          pickup_start: new Date(s.pickup_start).toISOString(),
+          pickup_end: new Date(s.pickup_end).toISOString(),
+        })),
     };
 
     try {
@@ -141,6 +175,7 @@ export default function RestaurantDashboard() {
         address: "",
         lat: null,
         lng: null,
+        pickup_slots: [],
       });
 
       await fetchListings(); // rebuilds all tab arrays from backend
@@ -350,6 +385,47 @@ export default function RestaurantDashboard() {
                   );
                 })}
               </div>
+            </div>
+
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>
+                Pickup Slots{" "}
+                <span style={{ color: "#64748b", fontWeight: 400 }}>(optional — recipients must select one)</span>
+              </label>
+              {formData.pickup_slots.map((slot) => (
+                <div key={slot.tempId} style={slotRowStyle}>
+                  <input
+                    type="text"
+                    placeholder="Label (e.g. 12pm – 1pm)"
+                    value={slot.label}
+                    onChange={(e) => handleSlotChange(slot.tempId, "label", e.target.value)}
+                    style={{ ...styles.input, flex: "1 1 130px", minWidth: 0 }}
+                  />
+                  <input
+                    type="datetime-local"
+                    value={slot.pickup_start}
+                    onChange={(e) => handleSlotChange(slot.tempId, "pickup_start", e.target.value)}
+                    style={{ ...styles.input, flex: "1 1 160px", minWidth: 0 }}
+                  />
+                  <input
+                    type="datetime-local"
+                    value={slot.pickup_end}
+                    onChange={(e) => handleSlotChange(slot.tempId, "pickup_end", e.target.value)}
+                    style={{ ...styles.input, flex: "1 1 160px", minWidth: 0 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveSlot(slot.tempId)}
+                    style={removeSlotBtnStyle}
+                    aria-label="Remove slot"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <button type="button" onClick={handleAddSlot} style={addSlotBtnStyle}>
+                + Add pickup slot
+              </button>
             </div>
 
             <div style={styles.row}>
@@ -965,6 +1041,46 @@ const styles = {
 };
 
 // ---------------------------------------------------------------------------
+// Slot row styles (plain objects so they work inline without emotion/styled)
+// ---------------------------------------------------------------------------
+
+const slotRowStyle = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  alignItems: "center",
+  marginBottom: 8,
+};
+
+const removeSlotBtnStyle = {
+  flexShrink: 0,
+  width: 32,
+  height: 32,
+  borderRadius: "50%",
+  border: "1px solid rgba(239,68,68,0.3)",
+  background: "rgba(239,68,68,0.1)",
+  color: "#fca5a5",
+  fontSize: 18,
+  lineHeight: 1,
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const addSlotBtnStyle = {
+  padding: "9px 14px",
+  borderRadius: 12,
+  border: "1px solid rgba(249,115,22,0.3)",
+  background: "rgba(249,115,22,0.08)",
+  color: "#fb923c",
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: "pointer",
+  alignSelf: "flex-start",
+};
+
+// ---------------------------------------------------------------------------
 // Address autocomplete
 // ---------------------------------------------------------------------------
 
@@ -1083,6 +1199,7 @@ function AddressAutocomplete({ value, onAddressChange, onSelect, existingAddress
         onChange={(e) => onAddressChange(e.target.value)}
         onKeyDown={handleKeyDown}
         onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
+        onBlur={() => setTimeout(() => setShowDropdown(false), 160)}
         style={styles.input}
         autoComplete="off"
       />

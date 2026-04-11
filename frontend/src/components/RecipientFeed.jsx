@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { getListings, claimListing as apiClaimListing } from "../api/client";
+import { getListings, claimListing as apiClaimListing, getMyClaims } from "../api/client";
 import { useAuth } from "../auth/useAuth";
 import MealMap from "./MealMap";
 
@@ -18,6 +18,8 @@ export default function RecipientFeed() {
   const [showUrgentOnly, setShowUrgentOnly] = useState(false);
   const [notification, setNotification] = useState(null);
   const [claimCounts, setClaimCounts] = useState({});
+  const [slotSelections, setSlotSelections] = useState({});
+  const [justClaimedIds, setJustClaimedIds] = useState(new Set());
 
   const { user } = useAuth();
   const userId = user?.id || "user-demo";
@@ -40,6 +42,19 @@ export default function RecipientFeed() {
     const interval = setInterval(fetchListings, 15000);
     return () => clearInterval(interval);
   }, []);
+
+  // Pre-populate justClaimedIds from My Claims so returning users see "Claimed" state
+  useEffect(() => {
+    getMyClaims().then((data) => {
+      if (!Array.isArray(data)) return;
+      const ids = new Set(
+        data
+          .filter((c) => c.status === "confirmed")
+          .map((c) => c.listing_id)
+      );
+      setJustClaimedIds(ids);
+    }).catch(() => {/* not signed in or error — ignore */});
+  }, [userId]);
 
   const showNotification = (message, type = "success") => {
     setNotification({ message, type, id: Date.now() });
@@ -152,6 +167,14 @@ export default function RecipientFeed() {
     const requestedQuantity = Number(claimCounts[listing.id] || 1);
     const maxQuantity = Number(listing.quantity || 1);
 
+    // Require slot selection when listing defines slots
+    const slots = listing.pickup_slots || [];
+    const selectedSlot = slotSelections[listing.id] || null;
+    if (slots.length > 0 && !selectedSlot) {
+      showNotification("Please select a pickup slot before claiming.", "error");
+      return;
+    }
+
     // Client-side guardrail — clamp before hitting the network
     if (requestedQuantity < 1 || requestedQuantity > maxQuantity) {
       showNotification(
@@ -166,7 +189,8 @@ export default function RecipientFeed() {
     setClaimingIds((prev) => new Set(prev).add(listing.id));
 
     try {
-      await apiClaimListing(listing.id, userId, requestedQuantity);
+      await apiClaimListing(listing.id, userId, requestedQuantity, selectedSlot);
+      setJustClaimedIds((prev) => new Set(prev).add(listing.id));
       showNotification(
         `Pickup secured for ${requestedQuantity} item${requestedQuantity > 1 ? "s" : ""}.`,
         "success"
@@ -180,6 +204,8 @@ export default function RecipientFeed() {
         msg = `Only ${listing.quantity} available — reduce your quantity and try again.`;
       } else if (err.code === "UNAVAILABLE") {
         msg = "This listing is no longer available for claiming.";
+      } else if (err.code === "SLOT_REQUIRED") {
+        msg = "Please select a valid pickup slot.";
       }
       showNotification(msg, "error");
     } finally {
@@ -364,6 +390,8 @@ export default function RecipientFeed() {
             const maxQuantity = Number(listing.quantity || 1);
             const claimValue = claimCounts[listing.id] || 1;
 
+            const alreadyClaimed = justClaimedIds.has(listing.id);
+
             return (
               <div key={listing.id} style={styles.listingCard}>
                 <div style={styles.cardTop}>
@@ -380,10 +408,10 @@ export default function RecipientFeed() {
                   <div
                     style={{
                       ...styles.statusBadge,
-                      ...(isUrgent ? styles.statusUrgent : styles.statusActive),
+                      ...(alreadyClaimed ? styles.statusClaimed : isUrgent ? styles.statusUrgent : styles.statusActive),
                     }}
                   >
-                    {isUrgent ? "Urgent" : "Available"}
+                    {alreadyClaimed ? "Claimed" : isUrgent ? "Urgent" : "Available"}
                   </div>
                 </div>
 
@@ -436,6 +464,30 @@ export default function RecipientFeed() {
                   </div>
                 )}
 
+                {(listing.pickup_slots || []).length > 0 && (
+                  <div style={styles.slotRow}>
+                    <label style={styles.claimLabel}>Pickup slot</label>
+                    <select
+                      value={slotSelections[listing.id] || ""}
+                      onChange={(e) =>
+                        setSlotSelections((prev) => ({
+                          ...prev,
+                          [listing.id]: e.target.value || null,
+                        }))
+                      }
+                      style={styles.slotSelect}
+                      disabled={alreadyClaimed}
+                    >
+                      <option value="">Select a slot…</option>
+                      {listing.pickup_slots.map((slot) => (
+                        <option key={slot.id} value={slot.id}>
+                          {slot.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div style={styles.cardFooter}>
                   <div style={styles.claimControl}>
                     <label style={styles.claimLabel}>Claim</label>
@@ -452,20 +504,26 @@ export default function RecipientFeed() {
                         )
                       }
                       style={styles.quantityInput}
+                      disabled={alreadyClaimed}
                     />
                   </div>
 
                   <button
                     onClick={() => handleClaim(listing)}
-                    disabled={claimingIds.has(listing.id)}
+                    disabled={alreadyClaimed || claimingIds.has(listing.id)}
                     style={{
                       ...styles.claimButton,
+                      ...(alreadyClaimed ? styles.claimButtonClaimed : {}),
                       ...(claimingIds.has(listing.id)
                         ? styles.claimButtonDisabled
                         : {}),
                     }}
                   >
-                    {claimingIds.has(listing.id) ? "Claiming..." : "Reserve pickup"}
+                    {alreadyClaimed
+                      ? "Claimed"
+                      : claimingIds.has(listing.id)
+                      ? "Claiming..."
+                      : "Reserve pickup"}
                   </button>
                 </div>
               </div>
@@ -867,6 +925,11 @@ const styles = {
     color: "#fcd34d",
     border: "1px solid rgba(245,158,11,0.22)",
   },
+  statusClaimed: {
+    background: "rgba(148,163,184,0.1)",
+    color: "#94a3b8",
+    border: "1px solid rgba(148,163,184,0.2)",
+  },
   infoGrid: {
     marginTop: 18,
     display: "grid",
@@ -954,6 +1017,22 @@ const styles = {
     outline: "none",
     fontWeight: 700,
   },
+  slotRow: {
+    marginTop: 14,
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+  },
+  slotSelect: {
+    background: "#020617",
+    color: "#f8fafc",
+    border: "1px solid rgba(148,163,184,0.18)",
+    borderRadius: 12,
+    padding: "11px 14px",
+    outline: "none",
+    fontWeight: 600,
+    width: "100%",
+  },
   claimButton: {
     border: "none",
     borderRadius: 14,
@@ -967,6 +1046,12 @@ const styles = {
   },
   claimButtonDisabled: {
     opacity: 0.7,
+    cursor: "not-allowed",
+  },
+  claimButtonClaimed: {
+    background: "rgba(148,163,184,0.14)",
+    color: "#94a3b8",
+    boxShadow: "none",
     cursor: "not-allowed",
   },
   addressRow: {
