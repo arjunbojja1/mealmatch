@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getApiBaseUrl, getHealth, getHello, postEcho } from './api/client'
+import { getApiBaseUrl, getHealth, postEcho } from './api/client'
 import RestaurantDashboard from './RestaurantDashboard'
 import './App.css'
 import RecipientFeed from "./components/RecipientFeed";
@@ -14,8 +14,8 @@ function App() {
 
   async function checkBackend() {
     try {
-      const [health, hello] = await Promise.all([getHealth(), getHello()])
-      setApiMessage(`${hello.message} • ${health.status}`)
+      const health = await getHealth()
+      setApiMessage(`MealMatch API is running • ${health.status}`)
       setBackendHealthy(true)
     } catch {
       setApiMessage(`Backend unavailable at ${getApiBaseUrl()}`)
