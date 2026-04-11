@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getAdminListings,
   createListing,
@@ -24,6 +24,8 @@ export default function RestaurantDashboard() {
     pickup_end: "",
     location_name: "",
     address: "",
+    lat: null,
+    lng: null,
   });
 
   const [listings, setListings] = useState([]);
@@ -72,6 +74,14 @@ export default function RestaurantDashboard() {
     }));
   }
 
+  const handleAddressChange = useCallback((value) => {
+    setFormData((prev) => ({ ...prev, address: value, lat: null, lng: null }));
+  }, []);
+
+  const handleAddressSelect = useCallback(({ address, lat, lng }) => {
+    setFormData((prev) => ({ ...prev, address, lat, lng }));
+  }, []);
+
   function handleTagToggle(tag) {
     setFormData((prev) => {
       const alreadySelected = prev.dietary_tags.includes(tag);
@@ -111,6 +121,8 @@ export default function RestaurantDashboard() {
       pickup_end: new Date(formData.pickup_end).toISOString(),
       location_name: formData.location_name.trim(),
       address: formData.address.trim(),
+      lat: formData.lat,
+      lng: formData.lng,
     };
 
     try {
@@ -127,6 +139,8 @@ export default function RestaurantDashboard() {
         pickup_end: "",
         location_name: "",
         address: "",
+        lat: null,
+        lng: null,
       });
 
       await fetchListings(); // rebuilds all tab arrays from backend
@@ -301,15 +315,18 @@ export default function RestaurantDashboard() {
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Street Address <span style={{ color: "#64748b", fontWeight: 400 }}>(optional — enables directions)</span></label>
-              <input
-                type="text"
-                name="address"
-                placeholder="e.g. 3972 Campus Dr, College Park, MD 20742"
+              <label style={styles.label}>Street Address <span style={{ color: "#64748b", fontWeight: 400 }}>(optional — enables map)</span></label>
+              <AddressAutocomplete
                 value={formData.address}
-                onChange={handleChange}
-                style={styles.input}
+                onAddressChange={handleAddressChange}
+                onSelect={handleAddressSelect}
+                existingAddresses={listings.map((l) => l.address).filter(Boolean)}
               />
+              {formData.lat != null && (
+                <div style={styles.coordsHint}>
+                  Coordinates saved: {formData.lat.toFixed(5)}, {formData.lng.toFixed(5)}
+                </div>
+              )}
             </div>
 
             <div style={styles.fieldGroup}>
@@ -938,5 +955,224 @@ const styles = {
     color: "#ffffff",
     cursor: "pointer",
     fontWeight: 700,
+  },
+  coordsHint: {
+    fontSize: "12px",
+    color: "#22c55e",
+    marginTop: "4px",
+    fontWeight: 600,
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Address autocomplete
+// ---------------------------------------------------------------------------
+
+function AddressAutocomplete({ value, onAddressChange, onSelect, existingAddresses }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const [isSearching, setIsSearching] = useState(false);
+  const debounceRef = useRef(null);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    if (!value || value.length < 3) {
+      setSuggestions([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      const q = value.toLowerCase();
+
+      // Local: existing listing addresses
+      const local = (existingAddresses || [])
+        .filter((a) => a && a.toLowerCase().includes(q))
+        .slice(0, 3)
+        .map((a) => ({ label: a, address: a, lat: null, lng: null, source: "local" }));
+
+      // Remote: Photon geocoding
+      let remote = [];
+      try {
+        setIsSearching(true);
+        const res = await fetch(
+          `https://photon.komoot.io/api/?q=${encodeURIComponent(value)}&limit=5`,
+        );
+        if (res.ok) {
+          const json = await res.json();
+          remote = (json.features || []).map((f) => {
+            const p = f.properties;
+            const parts = [
+              p.housenumber && p.street ? `${p.housenumber} ${p.street}` : p.street || p.name,
+              p.city,
+              p.state,
+            ].filter(Boolean);
+            const label = parts.length > 0 ? parts.join(", ") : (p.name || value);
+            return {
+              label,
+              address: label,
+              lat: f.geometry.coordinates[1],
+              lng: f.geometry.coordinates[0],
+              source: "remote",
+            };
+          });
+        }
+      } catch {
+        // graceful fallback — remote unavailable
+      } finally {
+        setIsSearching(false);
+      }
+
+      const seen = new Set(local.map((s) => s.label.toLowerCase()));
+      const merged = [
+        ...local,
+        ...remote.filter((s) => !seen.has(s.label.toLowerCase())),
+      ].slice(0, 7);
+
+      setSuggestions(merged);
+      setShowDropdown(merged.length > 0);
+      setActiveIndex(-1);
+    }, 300);
+
+    return () => clearTimeout(debounceRef.current);
+  }, [value, existingAddresses]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handler(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  function selectSuggestion(suggestion) {
+    onSelect({ address: suggestion.address, lat: suggestion.lat, lng: suggestion.lng });
+    setSuggestions([]);
+    setShowDropdown(false);
+    setActiveIndex(-1);
+  }
+
+  function handleKeyDown(e) {
+    if (!showDropdown || suggestions.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.min(i + 1, suggestions.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(i - 1, -1));
+    } else if (e.key === "Enter" && activeIndex >= 0) {
+      e.preventDefault();
+      selectSuggestion(suggestions[activeIndex]);
+    } else if (e.key === "Escape") {
+      setShowDropdown(false);
+      setActiveIndex(-1);
+    }
+  }
+
+  return (
+    <div ref={containerRef} style={{ position: "relative" }}>
+      <input
+        type="text"
+        placeholder="e.g. 3972 Campus Dr, College Park, MD 20742"
+        value={value}
+        onChange={(e) => onAddressChange(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
+        style={styles.input}
+        autoComplete="off"
+      />
+      {isSearching && (
+        <div style={acStyles.spinner}>Searching…</div>
+      )}
+      {showDropdown && suggestions.length > 0 && (
+        <ul style={acStyles.dropdown}>
+          {suggestions.map((s, i) => (
+            <li
+              key={i}
+              style={{
+                ...acStyles.item,
+                ...(i === activeIndex ? acStyles.itemActive : {}),
+              }}
+              onMouseDown={() => selectSuggestion(s)}
+              onMouseEnter={() => setActiveIndex(i)}
+            >
+              <span style={acStyles.itemLabel}>{s.label}</span>
+              {s.source === "local" && <span style={acStyles.badge}>saved</span>}
+              {s.lat != null && <span style={acStyles.coordBadge}>⊙</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+const acStyles = {
+  spinner: {
+    position: "absolute",
+    right: 14,
+    top: "50%",
+    transform: "translateY(-50%)",
+    fontSize: "12px",
+    color: "#64748b",
+    pointerEvents: "none",
+  },
+  dropdown: {
+    position: "absolute",
+    top: "calc(100% + 4px)",
+    left: 0,
+    right: 0,
+    zIndex: 200,
+    background: "rgba(15,23,42,0.98)",
+    border: "1px solid rgba(148,163,184,0.22)",
+    borderRadius: "14px",
+    padding: "6px",
+    listStyle: "none",
+    margin: 0,
+    boxShadow: "0 12px 32px rgba(2,6,23,0.5)",
+    backdropFilter: "blur(12px)",
+    maxHeight: "260px",
+    overflowY: "auto",
+  },
+  item: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "10px 12px",
+    borderRadius: "10px",
+    cursor: "pointer",
+    color: "#e2e8f0",
+    fontSize: "14px",
+  },
+  itemActive: {
+    background: "rgba(249,115,22,0.14)",
+    color: "#fdba74",
+  },
+  itemLabel: {
+    flex: 1,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  badge: {
+    flexShrink: 0,
+    fontSize: "10px",
+    fontWeight: 700,
+    padding: "2px 6px",
+    borderRadius: "6px",
+    background: "rgba(34,197,94,0.14)",
+    color: "#86efac",
+    border: "1px solid rgba(34,197,94,0.2)",
+  },
+  coordBadge: {
+    flexShrink: 0,
+    fontSize: "14px",
+    color: "#38bdf8",
+    title: "Has coordinates",
   },
 };

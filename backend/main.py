@@ -364,6 +364,8 @@ class Listing(BaseModel):
     created_at: datetime
     address: str = ""
     location_name: str = ""
+    lat: float | None = None
+    lng: float | None = None
 
 
 class Claim(BaseModel):
@@ -385,6 +387,8 @@ class ListingCreate(BaseModel):
     pickup_end: datetime
     address: str = ""
     location_name: str = ""
+    lat: float | None = None
+    lng: float | None = None
 
 
 class ClaimCreate(BaseModel):
@@ -463,7 +467,10 @@ def _listing_dict(listing: Listing, *, urgent: bool | None = None) -> dict:
 def _to_response_dict(listing: Listing) -> dict:
     now = datetime.now(timezone.utc)
     is_urgent = listing.pickup_end - now <= timedelta(minutes=30)
-    return _listing_dict(listing, urgent=is_urgent)
+    d = _listing_dict(listing, urgent=is_urgent)
+    if listing.lat is not None and listing.lng is not None:
+        d["location"] = {"lat": listing.lat, "lng": listing.lng}
+    return d
 
 
 # ---------------------------------------------------------------------------
@@ -519,9 +526,11 @@ def create_listing(
         created_at=datetime.now(timezone.utc),
         address=payload.address,
         location_name=payload.location_name,
+        lat=payload.lat,
+        lng=payload.lng,
     )
     listings[listing.id] = listing
-    return ok_created(_listing_dict(listing), "Listing created successfully")
+    return ok_created(_to_response_dict(listing), "Listing created successfully")
 
 
 @app.post("/api/v1/listings/{listing_id}/claim")

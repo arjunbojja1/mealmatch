@@ -1,27 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { getListings, claimListing as apiClaimListing } from "../api/client";
 import { useAuth } from "../auth/useAuth";
-
-const defaultCenter = [38.9869, -76.9426];
-
-const markerIcon = new L.Icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl:
-    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-});
+import MealMap from "./MealMap";
 
 export default function RecipientFeed() {
+  const { state: routeState } = useLocation();
   const [listings, setListings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [claimingIds, setClaimingIds] = useState(new Set());
-  const [viewMode, setViewMode] = useState("list");
+  const [viewMode, setViewMode] = useState(routeState?.focusListingId ? "map" : "list");
+  const [focusedListingId, setFocusedListingId] = useState(routeState?.focusListingId || null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTag, setSelectedTag] = useState("all");
   const [sortBy, setSortBy] = useState("ending-soon");
@@ -139,6 +129,11 @@ export default function RecipientFeed() {
 
     return result;
   }, [listings, searchTerm, selectedTag, sortBy, showUrgentOnly]);
+
+  const showOnMap = useCallback((listing) => {
+    setFocusedListingId(listing.id);
+    setViewMode("map");
+  }, []);
 
   const handleClaimCountChange = (listingId, value, maxQuantity) => {
     const numberValue = Number(value);
@@ -344,49 +339,14 @@ export default function RecipientFeed() {
         </div>
       ) : viewMode === "map" ? (
         <div style={styles.mapShell}>
-          <MapContainer
-            center={defaultCenter}
-            zoom={14}
-            style={styles.map}
-            scrollWheelZoom={true}
-          >
-            <TileLayer
-              attribution='&copy; OpenStreetMap contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            {filteredListings.map((listing) => {
-              const lat = listing.location?.lat ?? defaultCenter[0];
-              const lng = listing.location?.lng ?? defaultCenter[1];
-              return (
-                <Marker
-                  key={listing.id}
-                  position={[lat, lng]}
-                  icon={markerIcon}
-                >
-                  <Popup>
-                    <div style={{ minWidth: 180 }}>
-                      <strong>{listing.title}</strong>
-                      <p style={{ margin: "8px 0" }}>{listing.description}</p>
-                      <p style={{ margin: "8px 0" }}>
-                        Qty: {listing.quantity} ·{" "}
-                        {formatMinutesLeft(getMinutesLeft(listing.pickup_end))}
-                      </p>
-                      <button
-                        onClick={() => handleClaim(listing)}
-                        disabled={claimingIds.has(listing.id)}
-                        style={{
-                          ...styles.popupButton,
-                          ...(claimingIds.has(listing.id) ? { opacity: 0.7, cursor: "not-allowed" } : {}),
-                        }}
-                      >
-                        {claimingIds.has(listing.id) ? "Claiming..." : "Claim now"}
-                      </button>
-                    </div>
-                  </Popup>
-                </Marker>
-              );
-            })}
-          </MapContainer>
+          <MealMap
+            listings={filteredListings}
+            focusedId={focusedListingId}
+            onListingClick={(l) => setFocusedListingId(l.id)}
+            onClaim={handleClaim}
+            claimingIds={claimingIds}
+            height={560}
+          />
         </div>
       ) : filteredListings.length === 0 ? (
         <div style={styles.emptyState}>
@@ -455,17 +415,17 @@ export default function RecipientFeed() {
                   )}
                 </div>
 
-                {listing.address && (
+                {(listing.address || listing.location?.lat != null) && (
                   <div style={styles.addressRow}>
-                    <span style={styles.addressText}>{listing.address}</span>
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(listing.address)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={styles.directionsLink}
+                    {listing.address && (
+                      <span style={styles.addressText}>{listing.address}</span>
+                    )}
+                    <button
+                      onClick={() => showOnMap(listing)}
+                      style={styles.showOnMapBtn}
                     >
-                      Get directions
-                    </a>
+                      Show on map
+                    </button>
                   </div>
                 )}
 
@@ -811,21 +771,6 @@ const styles = {
     border: "1px solid rgba(148,163,184,0.18)",
     boxShadow: "0 20px 50px rgba(2,6,23,0.35)",
   },
-  map: {
-    height: 560,
-    width: "100%",
-  },
-  popupButton: {
-    marginTop: 8,
-    width: "100%",
-    border: "none",
-    borderRadius: 10,
-    padding: "10px 12px",
-    background: "#f97316",
-    color: "#fff",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
   cardGrid: {
     marginTop: 20,
     display: "grid",
@@ -1038,15 +983,16 @@ const styles = {
     flex: 1,
     minWidth: 0,
   },
-  directionsLink: {
+  showOnMapBtn: {
     flexShrink: 0,
     padding: "6px 12px",
     borderRadius: 10,
-    border: "1px solid rgba(56,189,248,0.3)",
-    background: "rgba(56,189,248,0.08)",
-    color: "#7dd3fc",
+    border: "1px solid rgba(249,115,22,0.3)",
+    background: "rgba(249,115,22,0.1)",
+    color: "#fdba74",
     fontSize: 12,
     fontWeight: 600,
-    textDecoration: "none",
+    cursor: "pointer",
+    fontFamily: "inherit",
   },
 };

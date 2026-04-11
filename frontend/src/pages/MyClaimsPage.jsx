@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { getMyClaims, cancelClaim } from '../api/client'
 
 function formatTime(dateString) {
@@ -9,15 +10,6 @@ function formatTime(dateString) {
   })
 }
 
-function getDirectionsUrl(listing) {
-  if (!listing) return null
-  if (listing.address) return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(listing.address)}`
-  if (listing.location?.lat && listing.location?.lng) {
-    return `https://www.google.com/maps?q=${listing.location.lat},${listing.location.lng}`
-  }
-  return null
-}
-
 const STATUS_STYLE = {
   confirmed: { background: 'rgba(34,197,94,0.12)', color: '#86efac', border: '1px solid rgba(34,197,94,0.25)' },
   cancelled: { background: 'rgba(148,163,184,0.1)', color: '#94a3b8', border: '1px solid rgba(148,163,184,0.2)' },
@@ -25,6 +17,7 @@ const STATUS_STYLE = {
 }
 
 export default function MyClaimsPage() {
+  const navigate = useNavigate()
   const [myClaims, setMyClaims] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -50,6 +43,11 @@ export default function MyClaimsPage() {
   }, [])
 
   useEffect(() => { fetchClaims() }, [fetchClaims])
+
+  const handleShowOnMap = useCallback((listing) => {
+    if (!listing) return
+    navigate('/browse', { state: { focusListingId: listing.id } })
+  }, [navigate])
 
   const handleCancel = async (claim) => {
     if (cancellingIds.has(claim.id)) return
@@ -130,6 +128,7 @@ export default function MyClaimsPage() {
                     claim={claim}
                     isCancelling={cancellingIds.has(claim.id)}
                     onCancel={handleCancel}
+                    onShowMap={handleShowOnMap}
                   />
                 ))}
               </div>
@@ -140,7 +139,7 @@ export default function MyClaimsPage() {
               <h2 style={{ ...s.sectionTitle, color: '#64748b' }}>Past Claims</h2>
               <div style={s.grid}>
                 {past.map((claim) => (
-                  <ClaimCard key={claim.id} claim={claim} />
+                  <ClaimCard key={claim.id} claim={claim} onShowMap={handleShowOnMap} />
                 ))}
               </div>
             </section>
@@ -151,11 +150,11 @@ export default function MyClaimsPage() {
   )
 }
 
-function ClaimCard({ claim, isCancelling, onCancel }) {
+function ClaimCard({ claim, isCancelling, onCancel, onShowMap }) {
   const listing = claim.listing
-  const directionsUrl = getDirectionsUrl(listing)
   const statusStyle = STATUS_STYLE[claim.status] || STATUS_STYLE.pending
   const canCancel = claim.status === 'confirmed' && onCancel
+  const canShowOnMap = listing && (listing.address || listing.location?.lat != null)
 
   return (
     <div style={s.card}>
@@ -178,15 +177,13 @@ function ClaimCard({ claim, isCancelling, onCancel }) {
       </div>
 
       <div style={s.cardFooter}>
-        {directionsUrl && (
-          <a
-            href={directionsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={s.directionsLink}
+        {canShowOnMap && (
+          <button
+            onClick={() => onShowMap(listing)}
+            style={s.showOnMapBtn}
           >
-            Get directions
-          </a>
+            Show on map
+          </button>
         )}
         {canCancel && (
           <button
@@ -349,15 +346,16 @@ const s = {
   metaValue: { color: '#f8fafc', fontSize: 22, fontWeight: 800 },
   metaValueSmall: { color: '#e2e8f0', fontSize: 13, fontWeight: 600, lineHeight: 1.4 },
   cardFooter: { display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' },
-  directionsLink: {
+  showOnMapBtn: {
     padding: '9px 14px',
     borderRadius: 12,
-    border: '1px solid rgba(56,189,248,0.3)',
-    background: 'rgba(56,189,248,0.08)',
-    color: '#7dd3fc',
+    border: '1px solid rgba(249,115,22,0.3)',
+    background: 'rgba(249,115,22,0.1)',
+    color: '#fdba74',
     fontSize: 13,
     fontWeight: 600,
-    textDecoration: 'none',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
   },
   cancelBtn: {
     padding: '9px 14px',
