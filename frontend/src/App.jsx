@@ -15,6 +15,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
 import UnauthorizedPage from './pages/UnauthorizedPage'
+import HomePage from './pages/HomePage'
 
 import RecipientFeed from './components/RecipientFeed'
 import RestaurantDashboard from './RestaurantDashboard'
@@ -24,24 +25,6 @@ import PartnerPage from './pages/PartnerPage'
 
 import { getHealth } from './api/client'
 import './App.css'
-
-// ---------------------------------------------------------------------------
-// Role → default landing page
-// ---------------------------------------------------------------------------
-const ROLE_HOME = {
-  recipient: '/browse',
-  restaurant: '/restaurant',
-  admin: '/admin',
-  partner: '/browse',
-}
-
-// ---------------------------------------------------------------------------
-// Root redirect  (/ → role-based landing)
-// ---------------------------------------------------------------------------
-function RoleRedirect() {
-  const { user } = useAuth()
-  return <Navigate to={ROLE_HOME[user?.role] || '/browse'} replace />
-}
 
 // ---------------------------------------------------------------------------
 // Authenticated app shell (header + outlet)
@@ -145,22 +128,19 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           {/* Public pages */}
+          <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
-          {/* Authenticated shell */}
+          {/* Authenticated shell — pathless layout, wraps all protected sub-routes */}
           <Route
-            path="/"
             element={
               <ProtectedRoute>
                 <AppShell />
               </ProtectedRoute>
             }
           >
-            {/* Index → role-based redirect */}
-            <Route index element={<RoleRedirect />} />
-
             {/* Browse food: recipient + admin */}
             <Route
               path="browse"
