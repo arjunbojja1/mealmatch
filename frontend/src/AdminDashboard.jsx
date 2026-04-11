@@ -1206,13 +1206,13 @@ const styles = {
   btnAmber: {
     padding: "9px 14px",
     borderRadius: 10,
-    background: "rgba(245,158,11,0.15)",
-    color: "#fcd34d",
+    background: "rgba(249,115,22,0.15)",
+    color: "#fdba74",
     fontWeight: 700,
     fontSize: 13,
     cursor: "pointer",
     fontFamily: "inherit",
-    border: "1px solid rgba(245,158,11,0.25)",
+    border: "1px solid rgba(249,115,22,0.3)",
   },
   btnBlue: {
     padding: "9px 14px",

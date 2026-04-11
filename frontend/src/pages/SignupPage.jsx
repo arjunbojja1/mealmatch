@@ -195,7 +195,7 @@ const s = {
     fontSize: 14,
   },
   btn: {
-    background: 'linear-gradient(135deg, #22c55e, #f97316)',
+    background: '#f97316',
     border: 'none',
     borderRadius: 14,
     padding: '14px',
@@ -204,7 +204,7 @@ const s = {
     fontWeight: 800,
     cursor: 'pointer',
     fontFamily: 'inherit',
-    boxShadow: '0 14px 28px rgba(34,197,94,0.22)',
+    boxShadow: '0 14px 28px rgba(249,115,22,0.28)',
   },
   footer: { marginTop: 20, textAlign: 'center', color: '#64748b', fontSize: 14 },
   link: { color: '#f97316', textDecoration: 'none', fontWeight: 600 },

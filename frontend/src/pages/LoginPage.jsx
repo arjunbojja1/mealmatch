@@ -151,7 +151,7 @@ const s = {
     fontSize: 14,
   },
   btn: {
-    background: 'linear-gradient(135deg, #f97316, #22c55e)',
+    background: '#f97316',
     border: 'none',
     borderRadius: 14,
     padding: '14px',

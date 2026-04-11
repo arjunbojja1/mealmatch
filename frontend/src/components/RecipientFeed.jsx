@@ -748,7 +748,7 @@ const styles = {
     cursor: "pointer",
   },
   toggleButtonActive: {
-    background: "linear-gradient(135deg, #f59e0b, #ea580c)",
+    background: "#f97316",
     color: "#fff",
     border: "none",
   },
@@ -771,7 +771,7 @@ const styles = {
     fontWeight: 700,
   },
   viewButtonActive: {
-    background: "linear-gradient(135deg, #f97316, #22c55e)",
+    background: "#f97316",
     color: "#fff",
   },
   statsRow: {
