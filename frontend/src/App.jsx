@@ -3,6 +3,7 @@ import { getApiBaseUrl, getHealth } from './api/client'
 import RestaurantDashboard from './RestaurantDashboard'
 import './App.css'
 import RecipientFeed from "./components/RecipientFeed";
+import './App.css'
 
 function App() {
   const [backendHealthy, setBackendHealthy] = useState(null)
