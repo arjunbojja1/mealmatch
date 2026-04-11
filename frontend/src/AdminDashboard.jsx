@@ -55,6 +55,16 @@ function ActivityBar({ label, value, total, color, helper }) {
   );
 }
 
+function ImpactMetric({ label, value, detail, accent, glow }) {
+  return (
+    <div style={{ ...styles.impactMetricCard, boxShadow: glow }}>
+      <div style={styles.impactMetricLabel}>{label}</div>
+      <div style={{ ...styles.impactMetricValue, color: accent }}>{value}</div>
+      <div style={styles.impactMetricDetail}>{detail}</div>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const [listings, setListings] = useState([]);
   const [stats, setStats] = useState({
@@ -246,6 +256,27 @@ export default function AdminDashboard() {
     },
   ];
 
+  const activitySummary = [
+    {
+      label: "Open supply",
+      value: Number(stats.active_listings || 0),
+      detail: "Listings currently available for pickup",
+      color: "#4ade80",
+    },
+    {
+      label: "Completed flow",
+      value: Number(stats.claimed_listings || 0),
+      detail: "Listings that reached a completed claimed state",
+      color: "#fb923c",
+    },
+    {
+      label: "Claims processed",
+      value: Number(stats.total_claims || 0),
+      detail: "Successful claim records counted by the backend",
+      color: "#38bdf8",
+    },
+  ];
+
   return (
     <div style={styles.shell}>
       <Toast toasts={toasts} />
@@ -266,6 +297,60 @@ export default function AdminDashboard() {
         >
           {loading ? "Refreshing..." : "↻ Refresh"}
         </button>
+      </section>
+
+      <section style={styles.impactSection}>
+        <div style={styles.impactHeader}>
+          <div>
+            <div style={styles.sectionKicker}>Impact Dashboard</div>
+            <h2 style={styles.sectionTitle}>Outcome snapshot across the platform</h2>
+            <p style={styles.sectionText}>
+              A dedicated view of the platform outcomes that matter most, wired
+              directly to the admin stats endpoint.
+            </p>
+          </div>
+        </div>
+
+        <div style={styles.impactGrid}>
+          <div style={styles.impactMetricColumn}>
+            <ImpactMetric
+              label="Meals Saved"
+              value={Number(stats.meals_saved || 0)}
+              detail="Total meals recovered according to backend admin stats"
+              accent="#facc15"
+              glow="0 24px 48px rgba(250, 204, 21, 0.08)"
+            />
+            <ImpactMetric
+              label="Listings Completed"
+              value={Number(stats.claimed_listings || 0)}
+              detail="Listings fully completed through successful claiming"
+              accent="#fb923c"
+              glow="0 24px 48px rgba(251, 146, 60, 0.08)"
+            />
+          </div>
+
+          <div style={styles.impactActivityCard}>
+            <div style={styles.impactActivityTitle}>System Activity</div>
+            <div style={styles.impactActivityText}>
+              Live operational movement across supply, fulfillment, and claim volume.
+            </div>
+            <div style={styles.impactMiniStats}>
+              {activitySummary.map((item) => (
+                <div key={item.label} style={styles.impactMiniStat}>
+                  <div
+                    style={{
+                      ...styles.impactMiniAccent,
+                      background: item.color,
+                    }}
+                  />
+                  <div style={styles.impactMiniLabel}>{item.label}</div>
+                  <div style={styles.impactMiniValue}>{item.value}</div>
+                  <div style={styles.impactMiniDetail}>{item.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </section>
 
       <div style={styles.statsRow}>
@@ -625,6 +710,121 @@ const styles = {
     gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
     gap: 14,
     marginBottom: 24,
+  },
+  impactSection: {
+    marginBottom: 24,
+    padding: "24px",
+    borderRadius: 24,
+    border: "1px solid rgba(148,163,184,0.12)",
+    background:
+      "radial-gradient(circle at top left, rgba(56,189,248,0.1), transparent 28%), radial-gradient(circle at bottom right, rgba(249,115,22,0.12), transparent 30%), linear-gradient(135deg, rgba(15,23,42,0.96) 0%, rgba(7,12,24,0.98) 100%)",
+  },
+  impactHeader: {
+    marginBottom: 18,
+  },
+  impactGrid: {
+    display: "grid",
+    gridTemplateColumns: "minmax(220px, 320px) minmax(0, 1fr)",
+    gap: 16,
+    alignItems: "start",
+  },
+  impactMetricColumn: {
+    display: "grid",
+    gap: 12,
+  },
+  impactMetricCard: {
+    borderRadius: 20,
+    padding: "16px 18px",
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(148,163,184,0.12)",
+    minHeight: 0,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "flex-start",
+  },
+  impactMetricLabel: {
+    fontSize: 12,
+    fontWeight: 800,
+    color: "rgba(148,163,184,0.74)",
+    textTransform: "uppercase",
+    letterSpacing: "0.1em",
+  },
+  impactMetricValue: {
+    fontSize: "clamp(1.8rem, 2.6vw, 2.4rem)",
+    fontWeight: 900,
+    lineHeight: 0.95,
+    letterSpacing: "-0.04em",
+    marginTop: 8,
+  },
+  impactMetricDetail: {
+    fontSize: 13,
+    color: "rgba(203,213,225,0.76)",
+    lineHeight: 1.5,
+    marginTop: 10,
+    maxWidth: "none",
+  },
+  impactActivityCard: {
+    borderRadius: 20,
+    padding: "18px",
+    background: "linear-gradient(180deg, rgba(12,20,38,0.92) 0%, rgba(6,10,20,0.96) 100%)",
+    border: "1px solid rgba(148,163,184,0.14)",
+    minHeight: 160,
+    display: "flex",
+    flexDirection: "column",
+  },
+  impactActivityTitle: {
+    fontSize: 20,
+    fontWeight: 800,
+    color: "#f8fafc",
+    marginBottom: 8,
+    letterSpacing: "-0.02em",
+  },
+  impactActivityText: {
+    fontSize: 14,
+    lineHeight: 1.6,
+    color: "rgba(203,213,225,0.74)",
+    marginBottom: 18,
+    maxWidth: 440,
+  },
+  impactMiniStats: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+    gap: 12,
+    marginTop: "auto",
+  },
+  impactMiniStat: {
+    position: "relative",
+    borderRadius: 16,
+    padding: "16px 16px 14px",
+    background: "rgba(255,255,255,0.035)",
+    border: "1px solid rgba(148,163,184,0.1)",
+    overflow: "hidden",
+  },
+  impactMiniAccent: {
+    width: 40,
+    height: 4,
+    borderRadius: 999,
+    marginBottom: 12,
+  },
+  impactMiniLabel: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: "rgba(148,163,184,0.74)",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+    marginBottom: 6,
+  },
+  impactMiniValue: {
+    fontSize: 26,
+    fontWeight: 800,
+    color: "#f8fafc",
+    marginBottom: 6,
+    lineHeight: 1,
+  },
+  impactMiniDetail: {
+    fontSize: 12,
+    lineHeight: 1.45,
+    color: "rgba(148,163,184,0.72)",
   },
   statCard: {
     background: "rgba(13,22,43,0.85)",
