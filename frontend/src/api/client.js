@@ -40,3 +40,27 @@ export function getHello() {
 export function postEcho(text) {
   return post('/api/v1/echo', { text })
 }
+
+// Listings
+export function getListings() {
+  return request('/api/v1/listings')
+}
+
+export function createListing(listing) {
+  return post('/api/v1/listings', listing)
+}
+
+export function claimListing(listingId, userId, claimedQuantity) {
+  return post(`/api/v1/listings/${listingId}/claim`, { user_id: userId, claimed_quantity: claimedQuantity })
+}
+
+export function updateListingStatus(listingId, status) {
+  return fetch(`${API_BASE_URL}/api/v1/listings/${listingId}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  }).then((r) => {
+    if (!r.ok) throw new Error(`Request failed: ${r.status}`)
+    return r.json()
+  })
+}
