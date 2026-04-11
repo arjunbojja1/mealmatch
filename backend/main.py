@@ -224,6 +224,7 @@ def update_listing_status(listing_id: str, payload: StatusUpdate) -> Listing:
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Claims (read-only for now)
 # ---------------------------------------------------------------------------
 
@@ -232,3 +233,54 @@ def update_listing_status(listing_id: str, payload: StatusUpdate) -> Listing:
 def get_claims() -> list[Claim]:
     """Return all claims."""
     return list(claims.values())
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoints
+# ---------------------------------------------------------------------------
+
+
+class AdminStats(BaseModel):
+    active_listings: int
+    claimed_listings: int
+    expired_listings: int
+    total_claims: int
+    meals_saved: int
+
+
+@app.get("/api/v1/admin/listings", response_model=list[Listing])
+def admin_get_all_listings() -> list[Listing]:
+    """Return every listing regardless of status (runs expiry check first)."""
+    _expire_listings()
+    return list(listings.values())
+
+
+@app.delete("/api/v1/listings/{listing_id}", response_model=Listing)
+def delete_listing(listing_id: str) -> Listing:
+    """Permanently remove a listing from in-memory storage."""
+    listing = listings.pop(listing_id, None)
+    if not listing:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    return listing
+
+
+@app.get("/api/v1/admin/stats", response_model=AdminStats)
+def admin_get_stats() -> AdminStats:
+    """Aggregate stats across all listings and claims."""
+    _expire_listings()
+
+    status_counts: dict[str, int] = {"active": 0, "claimed": 0, "expired": 0}
+    meals_saved = 0
+
+    for listing in listings.values():
+        status_counts[listing.status] += 1
+        if listing.status == "claimed":
+            meals_saved += listing.quantity
+
+    return AdminStats(
+        active_listings=status_counts["active"],
+        claimed_listings=status_counts["claimed"],
+        expired_listings=status_counts["expired"],
+        total_claims=len(claims),
+        meals_saved=meals_saved,
+    )
