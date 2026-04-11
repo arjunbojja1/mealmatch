@@ -11,6 +11,8 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [ebtCardNumber, setEbtCardNumber] = useState('')
+  const [ebtPin, setEbtPin] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -19,7 +21,10 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      const user = await login(email.trim(), password)
+      const user = await login(email.trim(), password, {
+        ebtCardNumber: ebtCardNumber.trim(),
+        ebtPin: ebtPin.trim(),
+      })
       const intended = location.state?.from?.pathname
       navigate(intended || ROLE_HOME[user.role] || '/browse', { replace: true })
     } catch (err) {
@@ -66,6 +71,38 @@ export default function LoginPage() {
             />
           </div>
 
+          <div style={s.verificationBox}>
+            <div style={s.verificationTitle}>Recipient verification</div>
+            <div style={s.verificationText}>
+              Recipient accounts require a simulated EBT card number and PIN.
+              Restaurant and admin accounts can leave these blank.
+            </div>
+
+            <div style={s.field}>
+              <label style={s.label}>EBT card number</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="6001 0000 0000 1201"
+                value={ebtCardNumber}
+                onChange={e => setEbtCardNumber(e.target.value)}
+                style={s.input}
+              />
+            </div>
+
+            <div style={s.field}>
+              <label style={s.label}>EBT PIN</label>
+              <input
+                type="password"
+                inputMode="numeric"
+                placeholder="4-digit PIN"
+                value={ebtPin}
+                onChange={e => setEbtPin(e.target.value)}
+                style={s.input}
+              />
+            </div>
+          </div>
+
           {error && <div style={s.errorBox}>{error}</div>}
 
           <button type="submit" disabled={loading} style={s.btn}>
@@ -81,19 +118,33 @@ export default function LoginPage() {
         <div style={s.demoBox}>
           <p style={s.demoTitle}>Demo credentials</p>
           {[
-            { label: 'Admin', email: 'admin@mealmatch.dev', pw: 'Admin1234!' },
-            { label: 'Restaurant', email: 'restaurant@mealmatch.dev', pw: 'Restaurant1!' },
-            { label: 'Recipient', email: 'recipient@mealmatch.dev', pw: 'Recipient1!' },
-          ].map(({ label, email: e, pw }) => (
+            { label: 'Admin', email: 'admin@mealmatch.dev', pw: 'Admin1234!', ebt: '', pin: '' },
+            { label: 'Restaurant', email: 'restaurant@mealmatch.dev', pw: 'Restaurant1!', ebt: '', pin: '' },
+            {
+              label: 'Recipient',
+              email: 'recipient@mealmatch.dev',
+              pw: 'Recipient1!',
+              ebt: '6001000000001201',
+              pin: '2468',
+            },
+          ].map(({ label, email: e, pw, ebt, pin }) => (
             <button
               key={label}
               type="button"
               style={s.demoBtn}
-              onClick={() => { setEmail(e); setPassword(pw) }}
+              onClick={() => {
+                setEmail(e)
+                setPassword(pw)
+                setEbtCardNumber(ebt)
+                setEbtPin(pin)
+              }}
             >
               {label}
             </button>
           ))}
+          <p style={s.demoHint}>
+            Recipient demo EBT: card ending in 1201, PIN 2468.
+          </p>
         </div>
       </div>
     </div>
@@ -150,6 +201,24 @@ const s = {
     color: '#fca5a5',
     fontSize: 14,
   },
+  verificationBox: {
+    padding: '14px 16px',
+    borderRadius: 16,
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(148,163,184,0.1)',
+  },
+  verificationTitle: {
+    marginBottom: 6,
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#e2e8f0',
+  },
+  verificationText: {
+    marginBottom: 14,
+    fontSize: 12,
+    lineHeight: 1.5,
+    color: '#94a3b8',
+  },
   btn: {
     background: '#f97316',
     border: 'none',
@@ -172,6 +241,7 @@ const s = {
     border: '1px solid rgba(148,163,184,0.1)',
   },
   demoTitle: { margin: '0 0 10px', fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em' },
+  demoHint: { margin: '10px 0 0', fontSize: 12, color: '#94a3b8', lineHeight: 1.45 },
   demoBtn: {
     display: 'inline-block',
     marginRight: 8,

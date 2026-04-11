@@ -23,6 +23,9 @@ from main import (
     app,
     _users,
     _seed_users,
+    _ebt_records,
+    _seed_ebt_records,
+    _login_archive,
     listings,
     claims,
     get_current_user,
@@ -41,12 +44,18 @@ def reset_all_state():
     listings.clear()
     claims.clear()
     _users.clear()
+    _ebt_records.clear()
+    _login_archive.clear()
     _seed_users()
+    _seed_ebt_records()
     yield
     listings.clear()
     claims.clear()
     _users.clear()
+    _ebt_records.clear()
+    _login_archive.clear()
     _seed_users()
+    _seed_ebt_records()
 
 
 # ---------------------------------------------------------------------------

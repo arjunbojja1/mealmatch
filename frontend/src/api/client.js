@@ -101,20 +101,32 @@ function del(path) {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-export function loginUser(email, password) {
+export function loginUser(email, password, options = {}) {
   // Auth endpoints don't need a token — use plain fetch
   return fetch(`${API_BASE_URL}/api/v1/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({
+      email,
+      password,
+      ebt_card_number: options.ebtCardNumber || null,
+      ebt_pin: options.ebtPin || null,
+    }),
   }).then(handleResponse)
 }
 
-export function signupUser(name, email, password, role) {
+export function signupUser(name, email, password, role, options = {}) {
   return fetch(`${API_BASE_URL}/api/v1/auth/signup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, email, password, role }),
+    body: JSON.stringify({
+      name,
+      email,
+      password,
+      role,
+      ebt_card_number: options.ebtCardNumber || null,
+      ebt_pin: options.ebtPin || null,
+    }),
   }).then(handleResponse)
 }
 
@@ -144,6 +156,10 @@ export function getAdminListings() {
 
 export function getAdminStats() {
   return request('/api/v1/admin/stats')
+}
+
+export function getAdminLoginArchive() {
+  return request('/api/v1/admin/login-archive')
 }
 
 export function createListing(listing) {

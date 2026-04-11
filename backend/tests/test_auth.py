@@ -24,15 +24,37 @@ client = TestClient(app)
 # ---------------------------------------------------------------------------
 
 
-def _signup(email="new@test.com", password="NewPass123", role="recipient", name="New User"):
+def _signup(
+    email="new@test.com",
+    password="NewPass123",
+    role="recipient",
+    name="New User",
+    ebt_card_number=None,
+    ebt_pin=None,
+):
     return client.post(
         "/api/v1/auth/signup",
-        json={"name": name, "email": email, "password": password, "role": role},
+        json={
+            "name": name,
+            "email": email,
+            "password": password,
+            "role": role,
+            "ebt_card_number": ebt_card_number,
+            "ebt_pin": ebt_pin,
+        },
     )
 
 
-def _login(email, password):
-    return client.post("/api/v1/auth/login", json={"email": email, "password": password})
+def _login(email, password, ebt_card_number=None, ebt_pin=None):
+    return client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": password,
+            "ebt_card_number": ebt_card_number,
+            "ebt_pin": ebt_pin,
+        },
+    )
 
 
 def _headers(email, password):
@@ -50,7 +72,14 @@ def _restaurant_headers():
 
 
 def _recipient_headers():
-    return _headers("recipient@mealmatch.dev", "Recipient1!")
+    res = _login(
+        "recipient@mealmatch.dev",
+        "Recipient1!",
+        ebt_card_number="6001000000001201",
+        ebt_pin="2468",
+    )
+    assert res.status_code == 200, f"Login failed: {res.json()}"
+    return {"Authorization": f"Bearer {res.json()['data']['access_token']}"}
 
 
 def _future_listing_payload():
@@ -73,7 +102,12 @@ def _future_listing_payload():
 
 class TestSignup:
     def test_signup_recipient_success(self):
-        res = _signup(role="recipient")
+        res = _signup(
+            email="alex.recipient@mealmatch.dev",
+            role="recipient",
+            ebt_card_number="6001000000002202",
+            ebt_pin="1357",
+        )
         assert res.status_code == 201
         body = res.json()
         assert body["ok"] is True
@@ -81,8 +115,9 @@ class TestSignup:
         assert body["data"]["token_type"] == "bearer"
         user = body["data"]["user"]
         assert user["role"] == "recipient"
-        assert user["email"] == "new@test.com"
+        assert user["email"] == "alex.recipient@mealmatch.dev"
         assert "hashed_password" not in user
+        assert user["ebt_verified"] is True
 
     def test_signup_restaurant_success(self):
         res = _signup(email="r@test.com", role="restaurant")
@@ -90,14 +125,23 @@ class TestSignup:
         assert res.json()["data"]["user"]["role"] == "restaurant"
 
     def test_signup_duplicate_email_rejected(self):
-        _signup(email="dup@test.com")
-        res = _signup(email="dup@test.com", name="Different Name")
+        _signup(
+            email="alex.recipient@mealmatch.dev",
+            ebt_card_number="6001000000002202",
+            ebt_pin="1357",
+        )
+        res = _signup(
+            email="alex.recipient@mealmatch.dev",
+            name="Different Name",
+            ebt_card_number="6001000000002202",
+            ebt_pin="1357",
+        )
         assert res.status_code == 409
         assert res.json()["error"]["code"] == "EMAIL_TAKEN"
 
     def test_signup_email_case_insensitive(self):
-        _signup(email="Upper@Test.com")
-        res = _signup(email="upper@test.com")
+        _signup(email="r@test.com", role="restaurant")
+        res = _signup(email="R@test.com", role="restaurant")
         assert res.status_code == 409
         assert res.json()["error"]["code"] == "EMAIL_TAKEN"
 
@@ -120,11 +164,30 @@ class TestSignup:
         assert res.json()["error"]["code"] == "VALIDATION_ERROR"
 
     def test_signup_token_is_usable(self):
-        res = _signup()
+        res = _signup(
+            email="sam.recipient@mealmatch.dev",
+            ebt_card_number="6001000000003303",
+            ebt_pin="8642",
+        )
         token = res.json()["data"]["access_token"]
         me = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
         assert me.status_code == 200
-        assert me.json()["data"]["email"] == "new@test.com"
+        assert me.json()["data"]["email"] == "sam.recipient@mealmatch.dev"
+
+    def test_signup_recipient_requires_ebt(self):
+        res = _signup(email="alex.recipient@mealmatch.dev", role="recipient")
+        assert res.status_code == 401
+        assert res.json()["error"]["code"] == "EBT_VERIFICATION_REQUIRED"
+
+    def test_signup_recipient_rejects_wrong_ebt_pin(self):
+        res = _signup(
+            email="alex.recipient@mealmatch.dev",
+            role="recipient",
+            ebt_card_number="6001000000002202",
+            ebt_pin="0000",
+        )
+        assert res.status_code == 401
+        assert res.json()["error"]["code"] == "INVALID_EBT_PIN"
 
 
 # ---------------------------------------------------------------------------
@@ -147,9 +210,30 @@ class TestLogin:
         assert res.json()["data"]["user"]["role"] == "restaurant"
 
     def test_login_recipient_success(self):
-        res = _login("recipient@mealmatch.dev", "Recipient1!")
+        res = _login(
+            "recipient@mealmatch.dev",
+            "Recipient1!",
+            ebt_card_number="6001000000001201",
+            ebt_pin="2468",
+        )
         assert res.status_code == 200
         assert res.json()["data"]["user"]["role"] == "recipient"
+        assert res.json()["data"]["user"]["ebt_verified"] is True
+
+    def test_login_recipient_requires_ebt(self):
+        res = _login("recipient@mealmatch.dev", "Recipient1!")
+        assert res.status_code == 401
+        assert res.json()["error"]["code"] == "EBT_VERIFICATION_REQUIRED"
+
+    def test_login_recipient_wrong_ebt_pin(self):
+        res = _login(
+            "recipient@mealmatch.dev",
+            "Recipient1!",
+            ebt_card_number="6001000000001201",
+            ebt_pin="9999",
+        )
+        assert res.status_code == 401
+        assert res.json()["error"]["code"] == "INVALID_EBT_PIN"
 
     def test_login_wrong_password(self):
         res = _login("admin@mealmatch.dev", "WrongPass!")
@@ -245,6 +329,10 @@ class TestUnauthenticated:
 
     def test_admin_listings_requires_auth(self):
         res = client.get("/api/v1/admin/listings")
+        assert res.status_code == 401
+
+    def test_login_archive_requires_auth(self):
+        res = client.get("/api/v1/admin/login-archive")
         assert res.status_code == 401
 
     def test_health_is_public(self):
@@ -401,3 +489,28 @@ class TestRoleGating:
     def test_recipient_cannot_list_claims(self):
         res = client.get("/api/v1/claims", headers=_recipient_headers())
         assert res.status_code == 403
+
+    def test_admin_can_access_login_archive(self):
+        _login("admin@mealmatch.dev", "Admin1234!")
+        res = client.get("/api/v1/admin/login-archive", headers=_admin_headers())
+        assert res.status_code == 200
+        assert isinstance(res.json()["data"], list)
+        assert res.json()["data"][0]["code"] == "LOGIN_SUCCESS"
+
+    def test_recipient_cannot_access_login_archive(self):
+        res = client.get("/api/v1/admin/login-archive", headers=_recipient_headers())
+        assert res.status_code == 403
+        assert res.json()["error"]["code"] == "FORBIDDEN"
+
+    def test_failed_recipient_ebt_login_is_archived(self):
+        _login(
+            "recipient@mealmatch.dev",
+            "Recipient1!",
+            ebt_card_number="6001000000001201",
+            ebt_pin="0000",
+        )
+        res = client.get("/api/v1/admin/login-archive", headers=_admin_headers())
+        latest = res.json()["data"][0]
+        assert latest["email"] == "recipient@mealmatch.dev"
+        assert latest["success"] is False
+        assert latest["code"] == "INVALID_EBT_PIN"

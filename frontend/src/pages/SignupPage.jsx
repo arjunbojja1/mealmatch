@@ -13,7 +13,14 @@ export default function SignupPage() {
   const { signup } = useAuth()
   const navigate = useNavigate()
 
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'recipient' })
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'recipient',
+    ebt_card_number: '',
+    ebt_pin: '',
+  })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -30,7 +37,16 @@ export default function SignupPage() {
     }
     setLoading(true)
     try {
-      const user = await signup(form.name.trim(), form.email.trim(), form.password, form.role)
+      const user = await signup(
+        form.name.trim(),
+        form.email.trim(),
+        form.password,
+        form.role,
+        {
+          ebtCardNumber: form.ebt_card_number.trim(),
+          ebtPin: form.ebt_pin.trim(),
+        },
+      )
       navigate(ROLE_HOME[user.role] || '/browse', { replace: true })
     } catch (err) {
       setError(err.message || 'Signup failed. Please try again.')
@@ -111,6 +127,50 @@ export default function SignupPage() {
               ))}
             </div>
           </div>
+
+          {form.role === 'recipient' && (
+            <div style={s.verificationBox}>
+              <div style={s.verificationTitle}>Recipient eligibility check</div>
+              <div style={s.verificationText}>
+                This demo requires a simulated EBT card number and PIN before a
+                recipient account can be created.
+              </div>
+
+              <div style={s.field}>
+                <label style={s.label}>EBT card number</label>
+                <input
+                  name="ebt_card_number"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="6001 0000 0000 2202"
+                  value={form.ebt_card_number}
+                  onChange={handleChange}
+                  required
+                  style={s.input}
+                />
+              </div>
+
+              <div style={s.field}>
+                <label style={s.label}>EBT PIN</label>
+                <input
+                  name="ebt_pin"
+                  type="password"
+                  inputMode="numeric"
+                  placeholder="4-digit PIN"
+                  value={form.ebt_pin}
+                  onChange={handleChange}
+                  required
+                  style={s.input}
+                />
+              </div>
+
+              <div style={s.helpText}>
+                Simulated eligible recipient emails: alex.recipient@mealmatch.dev
+                with card ending in 2202 / PIN 1357, or sam.recipient@mealmatch.dev
+                with card ending in 3303 / PIN 8642.
+              </div>
+            </div>
+          )}
 
           {error && <div style={s.errorBox}>{error}</div>}
 
@@ -193,6 +253,30 @@ const s = {
     padding: '11px 14px',
     color: '#fca5a5',
     fontSize: 14,
+  },
+  verificationBox: {
+    padding: '14px 16px',
+    borderRadius: 16,
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(148,163,184,0.1)',
+  },
+  verificationTitle: {
+    marginBottom: 6,
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#e2e8f0',
+  },
+  verificationText: {
+    marginBottom: 14,
+    fontSize: 12,
+    lineHeight: 1.5,
+    color: '#94a3b8',
+  },
+  helpText: {
+    marginTop: 10,
+    fontSize: 12,
+    lineHeight: 1.5,
+    color: '#94a3b8',
   },
   btn: {
     background: '#f97316',

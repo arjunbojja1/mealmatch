@@ -23,8 +23,8 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener('mm:unauthorized', handleUnauthorized)
   }, [])
 
-  async function login(email, password) {
-    const data = await loginUser(email, password)
+  async function login(email, password, options = {}) {
+    const data = await loginUser(email, password, options)
     localStorage.setItem('mm_token', data.access_token)
     localStorage.setItem('mm_user', JSON.stringify(data.user))
     setToken(data.access_token)
@@ -32,8 +32,8 @@ export function AuthProvider({ children }) {
     return data.user
   }
 
-  async function signup(name, email, password, role) {
-    const data = await signupUser(name, email, password, role)
+  async function signup(name, email, password, role, options = {}) {
+    const data = await signupUser(name, email, password, role, options)
     localStorage.setItem('mm_token', data.access_token)
     localStorage.setItem('mm_user', JSON.stringify(data.user))
     setToken(data.access_token)

@@ -1,11 +1,12 @@
 """
-MealMatch API  —  v0.3.0
-FastAPI backend with JWT auth, role-based access control, and in-memory storage.
+MealMatch API  —  v0.4.0
+FastAPI backend with JWT auth, role-based access control, recipient EBT
+verification, and in-memory storage.
 
 Default demo accounts (seeded at startup):
-  admin@mealmatch.dev    /  Admin1234!      role: admin
-  restaurant@mealmatch.dev / Restaurant1!   role: restaurant
-  recipient@mealmatch.dev  / Recipient1!    role: recipient
+  admin@mealmatch.dev       / Admin1234!      role: admin
+  restaurant@mealmatch.dev  / Restaurant1!    role: restaurant
+  recipient@mealmatch.dev   / Recipient1!     role: recipient
 """
 
 from datetime import datetime, timedelta, timezone
@@ -39,7 +40,7 @@ if not hasattr(jwt, "encode") or not hasattr(jwt, "decode"):
 # App setup
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="MealMatch API", version="0.3.0")
+app = FastAPI(title="MealMatch API", version="0.4.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -123,6 +124,8 @@ class UserInDB(BaseModel):
     role: UserRole
     location: str = ""
     hashed_password: str
+    ebt_verified: bool = False
+    ebt_last4: str = ""
 
 
 class UserPublic(BaseModel):
@@ -131,6 +134,8 @@ class UserPublic(BaseModel):
     email: str
     role: UserRole
     location: str = ""
+    ebt_verified: bool = False
+    ebt_last4: str = ""
 
 
 class UserCreate(BaseModel):
@@ -139,11 +144,34 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=8)
     role: UserRole
     location: str = ""
+    ebt_card_number: str | None = None
+    ebt_pin: str | None = None
 
 
 class UserLogin(BaseModel):
     email: str
     password: str
+    ebt_card_number: str | None = None
+    ebt_pin: str | None = None
+
+
+class SimulatedEBTRecord(BaseModel):
+    allowed_email: str
+    card_number: str
+    pin: str
+    label: str = ""
+
+
+class LoginAuditEntry(BaseModel):
+    id: str
+    email: str
+    role: UserRole | None = None
+    success: bool
+    code: str
+    message: str
+    requires_ebt: bool = False
+    ebt_last4: str = ""
+    created_at: datetime
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +179,9 @@ class UserLogin(BaseModel):
 # ---------------------------------------------------------------------------
 
 _users: dict[str, UserInDB] = {}  # keyed by lowercase email
+_ebt_records: dict[str, SimulatedEBTRecord] = {}  # keyed by lowercase email
+_login_archive: list[LoginAuditEntry] = []
+_auth_lock = threading.Lock()
 
 
 def _hash_pw(password: str) -> str:
@@ -196,10 +227,40 @@ def _seed_users() -> None:
             email=u["email"],
             role=u["role"],
             hashed_password=_hash_pw(u["password"]),
+            ebt_verified=(u["role"] == "recipient"),
+            ebt_last4="1201" if u["role"] == "recipient" else "",
         )
 
 
 _seed_users()
+
+
+def _seed_ebt_records() -> None:
+    defaults = [
+        {
+            "allowed_email": "recipient@mealmatch.dev",
+            "card_number": "6001000000001201",
+            "pin": "2468",
+            "label": "Seeded demo recipient",
+        },
+        {
+            "allowed_email": "alex.recipient@mealmatch.dev",
+            "card_number": "6001000000002202",
+            "pin": "1357",
+            "label": "Simulated signup recipient",
+        },
+        {
+            "allowed_email": "sam.recipient@mealmatch.dev",
+            "card_number": "6001000000003303",
+            "pin": "8642",
+            "label": "Simulated signup recipient",
+        },
+    ]
+    for record in defaults:
+        _ebt_records[record["allowed_email"].lower()] = SimulatedEBTRecord(**record)
+
+
+_seed_ebt_records()
 
 # ---------------------------------------------------------------------------
 # Auth helpers
@@ -221,7 +282,64 @@ def _user_public(user: UserInDB) -> dict:
     return UserPublic(
         id=user.id, name=user.name, email=user.email,
         role=user.role, location=user.location,
+        ebt_verified=user.ebt_verified, ebt_last4=user.ebt_last4,
     ).model_dump()
+
+
+def _normalise_card_number(card_number: str | None) -> str:
+    return "".join(ch for ch in (card_number or "") if ch.isdigit())
+
+
+def _last4(card_number: str | None) -> str:
+    digits = _normalise_card_number(card_number)
+    return digits[-4:] if len(digits) >= 4 else ""
+
+
+def _verify_ebt_for_email(
+    email: str,
+    card_number: str | None,
+    pin: str | None,
+) -> tuple[SimulatedEBTRecord | None, str | None, str | None]:
+    record = _ebt_records.get(email.lower())
+    if record is None:
+        return None, "EBT_NOT_ELIGIBLE", "No simulated EBT record exists for this recipient account"
+
+    normalised = _normalise_card_number(card_number)
+    if not normalised or not pin:
+        return None, "EBT_VERIFICATION_REQUIRED", "EBT card number and PIN are required for recipient access"
+
+    if normalised != record.card_number or pin != record.pin:
+        return None, "INVALID_EBT_PIN", "Invalid EBT card number or PIN"
+
+    return record, None, None
+
+
+def _archive_login_attempt(
+    *,
+    email: str,
+    role: UserRole | None,
+    success: bool,
+    code: str,
+    message: str,
+    requires_ebt: bool = False,
+    ebt_last4: str = "",
+) -> None:
+    with _auth_lock:
+        _login_archive.append(
+            LoginAuditEntry(
+                id=str(uuid4()),
+                email=email,
+                role=role,
+                success=success,
+                code=code,
+                message=message,
+                requires_ebt=requires_ebt,
+                ebt_last4=ebt_last4,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
+        if len(_login_archive) > 250:
+            del _login_archive[:-250]
 
 
 def get_current_user(token: str | None = Depends(oauth2_scheme)) -> UserInDB:
@@ -288,6 +406,23 @@ def signup(payload: UserCreate):
             status_code=409,
             detail={"code": "EMAIL_TAKEN", "message": "Email is already registered"},
         )
+
+    ebt_verified = False
+    ebt_last4 = ""
+    if payload.role == "recipient":
+        _, code, message = _verify_ebt_for_email(
+            payload.email,
+            payload.ebt_card_number,
+            payload.ebt_pin,
+        )
+        if code:
+            raise HTTPException(
+                status_code=403 if code == "EBT_NOT_ELIGIBLE" else 401,
+                detail={"code": code, "message": message},
+            )
+        ebt_verified = True
+        ebt_last4 = _last4(payload.ebt_card_number)
+
     user = UserInDB(
         id=str(uuid4()),
         name=payload.name,
@@ -295,6 +430,8 @@ def signup(payload: UserCreate):
         role=payload.role,
         location=payload.location,
         hashed_password=_hash_pw(payload.password),
+        ebt_verified=ebt_verified,
+        ebt_last4=ebt_last4,
     )
     _users[email_key] = user
     token = _create_token(user)
@@ -308,11 +445,54 @@ def signup(payload: UserCreate):
 def login(payload: UserLogin):
     user = _users.get(payload.email.lower())
     if not user or not _verify_pw(payload.password, user.hashed_password):
+        _archive_login_attempt(
+            email=payload.email,
+            role=user.role if user else None,
+            success=False,
+            code="INVALID_CREDENTIALS",
+            message="Invalid email or password",
+        )
         raise HTTPException(
             status_code=401,
             detail={"code": "INVALID_CREDENTIALS", "message": "Invalid email or password"},
         )
+
+    if user.role == "recipient":
+        _, code, message = _verify_ebt_for_email(
+            user.email,
+            payload.ebt_card_number,
+            payload.ebt_pin,
+        )
+        if code:
+            _archive_login_attempt(
+                email=user.email,
+                role=user.role,
+                success=False,
+                code=code,
+                message=message,
+                requires_ebt=True,
+                ebt_last4=_last4(payload.ebt_card_number),
+            )
+            raise HTTPException(
+                status_code=403 if code == "EBT_NOT_ELIGIBLE" else 401,
+                detail={"code": code, "message": message},
+            )
+        refreshed_user = user.model_copy(
+            update={"ebt_verified": True, "ebt_last4": _last4(payload.ebt_card_number)}
+        )
+        _users[user.email.lower()] = refreshed_user
+        user = refreshed_user
+
     token = _create_token(user)
+    _archive_login_attempt(
+        email=user.email,
+        role=user.role,
+        success=True,
+        code="LOGIN_SUCCESS",
+        message="Login successful",
+        requires_ebt=(user.role == "recipient"),
+        ebt_last4=user.ebt_last4,
+    )
     return ok(
         {"access_token": token, "token_type": "bearer", "user": _user_public(user)},
         "Login successful",
@@ -740,3 +920,9 @@ def admin_get_stats(_: UserInDB = Depends(require_roles("admin"))):
         meals_saved=meals_saved,
     )
     return ok(stats.model_dump())
+
+
+@app.get("/api/v1/admin/login-archive")
+def admin_get_login_archive(_: UserInDB = Depends(require_roles("admin"))):
+    archived = [entry.model_dump(mode="json") for entry in reversed(_login_archive)]
+    return ok(archived)

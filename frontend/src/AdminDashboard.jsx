@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   deleteListing,
   getAdminListings,
+  getAdminLoginArchive,
   getAdminStats,
   updateListingStatus,
 } from "./api/client";
@@ -74,6 +75,7 @@ export default function AdminDashboard() {
     total_claims: 0,
     meals_saved: 0,
   });
+  const [loginArchive, setLoginArchive] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState(null);
   const [toasts, setToasts] = useState([]);
@@ -90,11 +92,13 @@ export default function AdminDashboard() {
   const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
-      const [listingsData, statsData] = await Promise.all([
+      const [listingsData, statsData, loginArchiveData] = await Promise.all([
         getAdminListings(),
         getAdminStats(),
+        getAdminLoginArchive(),
       ]);
       setListings(Array.isArray(listingsData) ? listingsData : []);
+      setLoginArchive(Array.isArray(loginArchiveData) ? loginArchiveData : []);
       setStats(
         statsData && typeof statsData === "object"
           ? statsData
@@ -458,6 +462,39 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                     <div style={styles.restaurantTotal}>{restaurant.total}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={styles.activityPanel}>
+            <div style={styles.panelTitle}>Login Archive</div>
+            {loginArchive.length === 0 ? (
+              <div style={styles.panelEmpty}>No login attempts archived yet.</div>
+            ) : (
+              <div style={styles.loginArchiveList}>
+                {loginArchive.slice(0, 6).map((entry) => (
+                  <div key={entry.id} style={styles.loginArchiveRow}>
+                    <div style={styles.loginArchiveTop}>
+                      <div style={styles.loginArchiveEmail}>{entry.email}</div>
+                      <span
+                        style={{
+                          ...styles.loginArchiveBadge,
+                          ...(entry.success
+                            ? styles.loginArchiveBadgeSuccess
+                            : styles.loginArchiveBadgeFailure),
+                        }}
+                      >
+                        {entry.success ? "success" : entry.code}
+                      </span>
+                    </div>
+                    <div style={styles.loginArchiveMeta}>
+                      {entry.role || "unknown role"} • {formatDateTime(entry.created_at)}
+                      {entry.requires_ebt ? " • EBT checked" : ""}
+                      {entry.ebt_last4 ? ` • card •••• ${entry.ebt_last4}` : ""}
+                    </div>
+                    <div style={styles.loginArchiveMessage}>{entry.message}</div>
                   </div>
                 ))}
               </div>
@@ -1029,6 +1066,60 @@ const styles = {
     color: "#fdba74",
     fontWeight: 800,
     fontSize: 15,
+  },
+  loginArchiveList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  loginArchiveRow: {
+    padding: "12px 14px",
+    borderRadius: 14,
+    background: "rgba(255,255,255,0.03)",
+    border: "1px solid rgba(148,163,184,0.08)",
+  },
+  loginArchiveTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 10,
+    alignItems: "center",
+    flexWrap: "wrap",
+    marginBottom: 6,
+  },
+  loginArchiveEmail: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#f8fafc",
+    wordBreak: "break-word",
+  },
+  loginArchiveBadge: {
+    padding: "4px 10px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 800,
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+  },
+  loginArchiveBadgeSuccess: {
+    background: "rgba(34,197,94,0.12)",
+    color: "#86efac",
+    border: "1px solid rgba(34,197,94,0.24)",
+  },
+  loginArchiveBadgeFailure: {
+    background: "rgba(239,68,68,0.12)",
+    color: "#fca5a5",
+    border: "1px solid rgba(239,68,68,0.24)",
+  },
+  loginArchiveMeta: {
+    fontSize: 12,
+    color: "rgba(148,163,184,0.72)",
+    lineHeight: 1.5,
+    marginBottom: 4,
+  },
+  loginArchiveMessage: {
+    fontSize: 12,
+    color: "#cbd5e1",
+    lineHeight: 1.5,
   },
   tabRow: {
     display: "flex",

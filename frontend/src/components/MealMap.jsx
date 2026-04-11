@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
-import Map, { Marker, Popup, NavigationControl } from 'react-map-gl/maplibre'
+import Map, {
+  Marker,
+  Popup,
+  NavigationControl,
+} from 'react-map-gl/dist/esm/exports-maplibre.js'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
