@@ -22,6 +22,8 @@ export default function RestaurantDashboard() {
     dietary_tags: [],
     pickup_start: "",
     pickup_end: "",
+    location_name: "",
+    address: "",
   });
 
   const [listings, setListings] = useState([]);
@@ -107,6 +109,8 @@ export default function RestaurantDashboard() {
       dietary_tags: formData.dietary_tags,
       pickup_start: new Date(formData.pickup_start).toISOString(),
       pickup_end: new Date(formData.pickup_end).toISOString(),
+      location_name: formData.location_name.trim(),
+      address: formData.address.trim(),
     };
 
     try {
@@ -121,6 +125,8 @@ export default function RestaurantDashboard() {
         dietary_tags: [],
         pickup_start: "",
         pickup_end: "",
+        location_name: "",
+        address: "",
       });
 
       await fetchListings(); // rebuilds all tab arrays from backend
@@ -278,6 +284,32 @@ export default function RestaurantDashboard() {
                   min="1"
                 />
               </div>
+            </div>
+
+            <div style={styles.row}>
+              <div style={styles.fieldGroupHalf}>
+                <label style={styles.label}>Location Name <span style={{ color: "#64748b", fontWeight: 400 }}>(optional)</span></label>
+                <input
+                  type="text"
+                  name="location_name"
+                  placeholder="e.g. Stamp Student Union"
+                  value={formData.location_name}
+                  onChange={handleChange}
+                  style={styles.input}
+                />
+              </div>
+            </div>
+
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>Street Address <span style={{ color: "#64748b", fontWeight: 400 }}>(optional — enables directions)</span></label>
+              <input
+                type="text"
+                name="address"
+                placeholder="e.g. 3972 Campus Dr, College Park, MD 20742"
+                value={formData.address}
+                onChange={handleChange}
+                style={styles.input}
+              />
             </div>
 
             <div style={styles.fieldGroup}>
@@ -706,10 +738,10 @@ const styles = {
     fontSize: "14px",
   },
   tagButtonSelected: {
-    background: "linear-gradient(135deg, #f97316 0%, #22c55e 100%)",
+    background: "#f97316",
     color: "white",
     border: "1px solid rgba(249,115,22,0.6)",
-    boxShadow: "0 10px 22px rgba(249,115,22,0.28)",
+    boxShadow: "0 4px 12px rgba(249,115,22,0.25)",
   },
   errorBox: {
     background: "rgba(127,29,29,0.32)",
@@ -731,12 +763,12 @@ const styles = {
     padding: "15px 20px",
     borderRadius: "16px",
     border: "none",
-    background: "linear-gradient(135deg, #22c55e 0%, #f97316 100%)",
+    background: "#f97316",
     color: "white",
     cursor: "pointer",
     fontWeight: 800,
     fontSize: "15px",
-    boxShadow: "0 18px 36px rgba(34,197,94,0.22)",
+    boxShadow: "0 8px 20px rgba(249,115,22,0.3)",
   },
   tabs: {
     display: "flex",

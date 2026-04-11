@@ -164,3 +164,13 @@ export function updateListingStatus(listingId, status) {
 export function deleteListing(listingId) {
   return del(`/api/v1/listings/${listingId}`)
 }
+
+// My claims (recipient — own claims with embedded listing snapshot)
+export function getMyClaims() {
+  return request('/api/v1/my-claims')
+}
+
+// Cancel a confirmed claim (recipient owner or admin)
+export function cancelClaim(claimId) {
+  return del(`/api/v1/claims/${claimId}`)
+}

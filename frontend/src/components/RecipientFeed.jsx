@@ -409,7 +409,7 @@ export default function RecipientFeed() {
                 <div style={styles.cardTop}>
                   <div>
                     <div style={styles.locationPill}>
-                      {listing.location_name || "Nearby pickup"}
+                      {listing.location_name || listing.address || "Nearby pickup"}
                     </div>
                     <h3 style={styles.cardTitle}>{listing.title}</h3>
                     <p style={styles.cardDescription}>
@@ -454,6 +454,20 @@ export default function RecipientFeed() {
                     <span style={styles.tagMuted}>No dietary tags</span>
                   )}
                 </div>
+
+                {listing.address && (
+                  <div style={styles.addressRow}>
+                    <span style={styles.addressText}>{listing.address}</span>
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(listing.address)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={styles.directionsLink}
+                    >
+                      Get directions
+                    </a>
+                  </div>
+                )}
 
                 {isUrgent && (
                   <div style={styles.urgentBanner}>
@@ -787,6 +801,8 @@ const styles = {
     fontSize: 32,
     fontWeight: 800,
     color: "#ffffff",
+    overflowWrap: "break-word",
+    wordBreak: "break-all",
   },
   mapShell: {
     marginTop: 20,
@@ -805,7 +821,7 @@ const styles = {
     border: "none",
     borderRadius: 10,
     padding: "10px 12px",
-    background: "linear-gradient(135deg, #f97316, #22c55e)",
+    background: "#f97316",
     color: "#fff",
     fontWeight: 700,
     cursor: "pointer",
@@ -997,15 +1013,40 @@ const styles = {
     border: "none",
     borderRadius: 14,
     padding: "14px 18px",
-    background: "linear-gradient(135deg, #f97316, #22c55e)",
+    background: "#f97316",
     color: "#fff",
     fontWeight: 800,
     cursor: "pointer",
     minWidth: 170,
-    boxShadow: "0 14px 28px rgba(249,115,22,0.28)",
+    boxShadow: "0 6px 16px rgba(249,115,22,0.28)",
   },
   claimButtonDisabled: {
     opacity: 0.7,
     cursor: "not-allowed",
+  },
+  addressRow: {
+    marginTop: 12,
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  addressText: {
+    color: "#64748b",
+    fontSize: 13,
+    lineHeight: 1.4,
+    flex: 1,
+    minWidth: 0,
+  },
+  directionsLink: {
+    flexShrink: 0,
+    padding: "6px 12px",
+    borderRadius: 10,
+    border: "1px solid rgba(56,189,248,0.3)",
+    background: "rgba(56,189,248,0.08)",
+    color: "#7dd3fc",
+    fontSize: 12,
+    fontWeight: 600,
+    textDecoration: "none",
   },
 };

@@ -362,6 +362,8 @@ class Listing(BaseModel):
     pickup_end: datetime
     status: ListingStatus
     created_at: datetime
+    address: str = ""
+    location_name: str = ""
 
 
 class Claim(BaseModel):
@@ -381,6 +383,8 @@ class ListingCreate(BaseModel):
     dietary_tags: list[str] = []
     pickup_start: datetime
     pickup_end: datetime
+    address: str = ""
+    location_name: str = ""
 
 
 class ClaimCreate(BaseModel):
@@ -513,6 +517,8 @@ def create_listing(
         pickup_end=payload.pickup_end,
         status=ListingStatus.active,
         created_at=datetime.now(timezone.utc),
+        address=payload.address,
+        location_name=payload.location_name,
     )
     listings[listing.id] = listing
     return ok_created(_listing_dict(listing), "Listing created successfully")
@@ -543,7 +549,7 @@ def claim_listing(
                 },
             )
         already_claimed = any(
-            c.user_id == payload.user_id and c.listing_id == listing_id
+            c.user_id == payload.user_id and c.listing_id == listing_id and c.status == "confirmed"
             for c in claims.values()
         )
         if already_claimed:
@@ -629,13 +635,70 @@ def delete_listing(
 
 
 # ---------------------------------------------------------------------------
-# Claims  (admin only)
+# Claims
 # ---------------------------------------------------------------------------
 
 
 @app.get("/api/v1/claims")
 def get_claims(_: UserInDB = Depends(require_roles("admin"))):
     return ok([c.model_dump(mode="json") for c in claims.values()])
+
+
+@app.get("/api/v1/my-claims")
+def get_my_claims(current_user: UserInDB = Depends(require_roles("recipient", "admin"))):
+    """Return all claims belonging to the current user, with embedded listing snapshot."""
+    user_claims = []
+    for c in claims.values():
+        if c.user_id == current_user.id:
+            claim_dict = c.model_dump(mode="json")
+            listing = listings.get(c.listing_id)
+            claim_dict["listing"] = _to_response_dict(listing) if listing else None
+            user_claims.append(claim_dict)
+    user_claims.sort(key=lambda x: x["claimed_at"], reverse=True)
+    return ok(user_claims)
+
+
+@app.delete("/api/v1/claims/{claim_id}")
+def cancel_claim(
+    claim_id: str,
+    current_user: UserInDB = Depends(require_roles("recipient", "admin")),
+):
+    """Cancel a confirmed claim. Restores listing quantity; revives 'claimed' listings to 'active'."""
+    claim = claims.get(claim_id)
+    if not claim:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "Claim not found"},
+        )
+    if current_user.role != "admin" and claim.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "FORBIDDEN", "message": "You can only cancel your own claims"},
+        )
+    if claim.status != "confirmed":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "NOT_CANCELLABLE",
+                "message": f"Only confirmed claims can be cancelled (current status: '{claim.status}')",
+            },
+        )
+    with _claim_lock:
+        updated_claim = claim.model_copy(update={"status": "cancelled"})
+        claims[claim_id] = updated_claim
+        listing = listings.get(claim.listing_id)
+        if listing:
+            restored_qty = listing.quantity + claim.claimed_quantity
+            # Only revive to active if it was fully-claimed (not time-expired)
+            new_status = (
+                ListingStatus.active
+                if listing.status == ListingStatus.claimed
+                else listing.status
+            )
+            listings[claim.listing_id] = listing.model_copy(
+                update={"quantity": restored_qty, "status": new_status}
+            )
+    return ok(updated_claim.model_dump(mode="json"), "Claim cancelled successfully")
 
 
 # ---------------------------------------------------------------------------

@@ -639,6 +639,127 @@ class TestAdminRoutes:
 
 
 # ---------------------------------------------------------------------------
+# Cancel claim
+# ---------------------------------------------------------------------------
+
+
+class TestCancelClaim:
+    def test_cancel_restores_quantity(self):
+        listings["t1"] = make_listing("t1", quantity=5)
+        claim_via_api("t1", "u1", 3)
+        claim_id = list(claims.keys())[0]
+        res = client.delete(f"/api/v1/claims/{claim_id}")
+        assert res.status_code == 200
+        assert res.json()["ok"] is True
+        assert listings["t1"].quantity == 5
+
+    def test_cancel_revives_fully_claimed_listing(self):
+        listings["t1"] = make_listing("t1", quantity=3)
+        claim_via_api("t1", "u1", 3)
+        assert listings["t1"].status == ListingStatus.claimed
+        claim_id = list(claims.keys())[0]
+        client.delete(f"/api/v1/claims/{claim_id}")
+        assert listings["t1"].status == ListingStatus.active
+        assert listings["t1"].quantity == 3
+
+    def test_cancel_does_not_revive_expired_listing(self):
+        listings["t1"] = make_listing("t1", quantity=5, status=ListingStatus.expired)
+        from main import Claim
+        from datetime import datetime, timezone
+        from uuid import uuid4
+        cid = str(uuid4())
+        claims[cid] = Claim(
+            id=cid, listing_id="t1", user_id="admin-001",
+            claimed_quantity=2, claimed_at=datetime.now(timezone.utc), status="confirmed",
+        )
+        res = client.delete(f"/api/v1/claims/{cid}")
+        assert res.status_code == 200
+        assert listings["t1"].status == ListingStatus.expired
+        assert listings["t1"].quantity == 7  # restored but status unchanged
+
+    def test_cancel_sets_claim_status_cancelled(self):
+        listings["t1"] = make_listing("t1", quantity=5)
+        claim_via_api("t1", "u1", 1)
+        claim_id = list(claims.keys())[0]
+        client.delete(f"/api/v1/claims/{claim_id}")
+        assert claims[claim_id].status == "cancelled"
+
+    def test_cancel_not_found(self):
+        res = client.delete("/api/v1/claims/no-such-id")
+        assert res.status_code == 404
+        assert res.json()["error"]["code"] == "NOT_FOUND"
+
+    def test_cancel_already_cancelled_rejected(self):
+        listings["t1"] = make_listing("t1", quantity=5)
+        claim_via_api("t1", "u1", 1)
+        claim_id = list(claims.keys())[0]
+        client.delete(f"/api/v1/claims/{claim_id}")
+        res = client.delete(f"/api/v1/claims/{claim_id}")
+        assert res.status_code == 409
+        assert res.json()["error"]["code"] == "NOT_CANCELLABLE"
+
+    def test_cancel_allows_reclaim_after_cancel(self):
+        listings["t1"] = make_listing("t1", quantity=5)
+        claim_via_api("t1", "u1", 2)
+        claim_id = list(claims.keys())[0]
+        client.delete(f"/api/v1/claims/{claim_id}")
+        # Same user re-claiming should now succeed
+        res = client.post(
+            "/api/v1/listings/t1/claim",
+            json={"user_id": "u1", "claimed_quantity": 1},
+        )
+        assert res.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Address / location fields
+# ---------------------------------------------------------------------------
+
+
+class TestAddressFields:
+    def _payload_with_address(self, **overrides):
+        now = datetime.now(timezone.utc)
+        base = {
+            "restaurant_id": "rest-1",
+            "title": "Location Test",
+            "description": "Some food",
+            "quantity": 5,
+            "dietary_tags": [],
+            "pickup_start": (now + timedelta(hours=1)).isoformat(),
+            "pickup_end": (now + timedelta(hours=3)).isoformat(),
+            "address": "123 Main St, College Park, MD 20740",
+            "location_name": "Stamp Student Union",
+        }
+        base.update(overrides)
+        return base
+
+    def test_address_fields_persisted_and_returned(self):
+        res = client.post("/api/v1/listings", json=self._payload_with_address())
+        assert res.status_code == 201
+        data = res.json()["data"]
+        assert data["address"] == "123 Main St, College Park, MD 20740"
+        assert data["location_name"] == "Stamp Student Union"
+
+    def test_address_fields_in_public_feed(self):
+        created = client.post("/api/v1/listings", json=self._payload_with_address()).json()["data"]
+        res = client.get("/api/v1/listings")
+        feed = {l["id"]: l for l in res.json()["data"]}
+        assert feed[created["id"]]["address"] == "123 Main St, College Park, MD 20740"
+
+    def test_address_fields_default_empty(self):
+        res = create_listing_via_api()
+        assert res["address"] == ""
+        assert res["location_name"] == ""
+
+    def test_existing_listings_without_address_have_defaults(self):
+        listings["no-addr"] = make_listing("no-addr")
+        res = client.get("/api/v1/admin/listings")
+        item = next(l for l in res.json()["data"] if l["id"] == "no-addr")
+        assert item["address"] == ""
+        assert item["location_name"] == ""
+
+
+# ---------------------------------------------------------------------------
 # Concurrency
 # ---------------------------------------------------------------------------
 
