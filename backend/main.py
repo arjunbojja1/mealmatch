@@ -457,7 +457,9 @@ def login(payload: UserLogin):
             detail={"code": "INVALID_CREDENTIALS", "message": "Invalid email or password"},
         )
 
-    if user.role == "recipient":
+    ebt_needed = user.role == "recipient" and not user.ebt_verified
+
+    if ebt_needed:
         _, code, message = _verify_ebt_for_email(
             user.email,
             payload.ebt_card_number,
@@ -490,7 +492,7 @@ def login(payload: UserLogin):
         success=True,
         code="LOGIN_SUCCESS",
         message="Login successful",
-        requires_ebt=(user.role == "recipient"),
+        requires_ebt=ebt_needed,
         ebt_last4=user.ebt_last4,
     )
     return ok(

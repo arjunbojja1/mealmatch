@@ -210,6 +210,12 @@ class TestLogin:
         assert res.json()["data"]["user"]["role"] == "restaurant"
 
     def test_login_recipient_success(self):
+        res = _login("recipient@mealmatch.dev", "Recipient1!")
+        assert res.status_code == 200
+        assert res.json()["data"]["user"]["role"] == "recipient"
+        assert res.json()["data"]["user"]["ebt_verified"] is True
+
+    def test_login_recipient_with_ebt_still_works(self):
         res = _login(
             "recipient@mealmatch.dev",
             "Recipient1!",
@@ -217,23 +223,17 @@ class TestLogin:
             ebt_pin="2468",
         )
         assert res.status_code == 200
-        assert res.json()["data"]["user"]["role"] == "recipient"
-        assert res.json()["data"]["user"]["ebt_verified"] is True
 
-    def test_login_recipient_requires_ebt(self):
-        res = _login("recipient@mealmatch.dev", "Recipient1!")
-        assert res.status_code == 401
-        assert res.json()["error"]["code"] == "EBT_VERIFICATION_REQUIRED"
-
-    def test_login_recipient_wrong_ebt_pin(self):
-        res = _login(
-            "recipient@mealmatch.dev",
-            "Recipient1!",
-            ebt_card_number="6001000000001201",
-            ebt_pin="9999",
+    def test_signup_then_login_recipient_does_not_require_ebt_again(self):
+        _signup(
+            email="sam.recipient@mealmatch.dev",
+            role="recipient",
+            ebt_card_number="6001000000003303",
+            ebt_pin="8642",
         )
-        assert res.status_code == 401
-        assert res.json()["error"]["code"] == "INVALID_EBT_PIN"
+        res = _login("sam.recipient@mealmatch.dev", "NewPass123")
+        assert res.status_code == 200
+        assert res.json()["data"]["user"]["ebt_verified"] is True
 
     def test_login_wrong_password(self):
         res = _login("admin@mealmatch.dev", "WrongPass!")
