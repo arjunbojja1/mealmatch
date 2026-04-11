@@ -504,14 +504,14 @@ const styles = {
   },
   statCard: {
     background: "rgba(15,23,42,0.72)",
-    border: "1px solid rgba(59,130,246,0.12)",
+    border: "1px solid rgba(249,115,22,0.12)",
     borderRadius: "22px",
     padding: "20px",
     boxShadow: "0 18px 36px rgba(2, 6, 23, 0.18)",
   },
   statLabel: {
     margin: "0 0 6px 0",
-    color: "#93c5fd",
+    color: "#fdba74",
     fontSize: "13px",
     textTransform: "uppercase",
     letterSpacing: "0.08em",
@@ -553,7 +553,7 @@ const styles = {
     fontSize: "12px",
     textTransform: "uppercase",
     letterSpacing: "0.12em",
-    color: "#60a5fa",
+    color: "#fb923c",
     fontWeight: 700,
   },
   sectionTitle: {
@@ -634,10 +634,10 @@ const styles = {
     fontSize: "14px",
   },
   tagButtonSelected: {
-    background: "linear-gradient(135deg, #2563eb 0%, #14b8a6 100%)",
+    background: "linear-gradient(135deg, #f97316 0%, #22c55e 100%)",
     color: "white",
-    border: "1px solid rgba(37,99,235,0.8)",
-    boxShadow: "0 10px 22px rgba(37,99,235,0.24)",
+    border: "1px solid rgba(249,115,22,0.6)",
+    boxShadow: "0 10px 22px rgba(249,115,22,0.28)",
   },
   errorBox: {
     background: "rgba(127,29,29,0.32)",
@@ -659,7 +659,7 @@ const styles = {
     padding: "15px 20px",
     borderRadius: "16px",
     border: "none",
-    background: "linear-gradient(135deg, #22c55e 0%, #06b6d4 100%)",
+    background: "linear-gradient(135deg, #22c55e 0%, #f97316 100%)",
     color: "white",
     cursor: "pointer",
     fontWeight: 800,
@@ -683,9 +683,9 @@ const styles = {
     fontSize: "14px",
   },
   activeTab: {
-    background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+    background: "linear-gradient(135deg, #f97316 0%, #ea580c 100%)",
     color: "white",
-    border: "1px solid rgba(37,99,235,0.8)",
+    border: "1px solid rgba(234,88,12,0.8)",
   },
   emptyState: {
     padding: "34px 20px",
@@ -726,7 +726,7 @@ const styles = {
   },
   listingId: {
     margin: "0 0 6px 0",
-    color: "#60a5fa",
+    color: "#fb923c",
     fontSize: "12px",
     textTransform: "uppercase",
     letterSpacing: "0.08em",
@@ -745,12 +745,12 @@ const styles = {
   statusPill: {
     padding: "8px 12px",
     borderRadius: "999px",
-    background: "rgba(37,99,235,0.18)",
-    color: "#bfdbfe",
+    background: "rgba(249,115,22,0.18)",
+    color: "#fed7aa",
     fontSize: "13px",
     fontWeight: 700,
     textTransform: "capitalize",
-    border: "1px solid rgba(59,130,246,0.18)",
+    border: "1px solid rgba(249,115,22,0.18)",
   },
   listingMetaGrid: {
     display: "grid",
@@ -769,7 +769,7 @@ const styles = {
   },
   metaLabel: {
     fontSize: "12px",
-    color: "#93c5fd",
+    color: "#fdba74",
     textTransform: "uppercase",
     letterSpacing: "0.05em",
     fontWeight: 700,

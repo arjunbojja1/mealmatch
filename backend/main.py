@@ -25,6 +25,12 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+MAX_CLAIM_QUANTITY = 10  # hard cap per single claim request
+
+# ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
 
@@ -218,6 +224,26 @@ def claim_listing(listing_id: str, payload: ClaimCreate) -> Listing:
             detail=f"Listing cannot be claimed — current status: '{listing.status.value}'",
         )
 
+    # Duplicate claim guard — one claim per user per listing
+    already_claimed = any(
+        c.user_id == payload.user_id and c.listing_id == listing_id
+        for c in claims.values()
+    )
+    if already_claimed:
+        raise HTTPException(status_code=409, detail="You have already claimed this listing")
+
+    # Quantity guardrails
+    if payload.claimed_quantity > MAX_CLAIM_QUANTITY:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Cannot claim more than {MAX_CLAIM_QUANTITY} items in a single request",
+        )
+    if payload.claimed_quantity > listing.quantity:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Requested quantity exceeds available ({listing.quantity} remaining)",
+        )
+
     claim = Claim(
         id=str(uuid4()),
         listing_id=listing_id,
@@ -228,7 +254,9 @@ def claim_listing(listing_id: str, payload: ClaimCreate) -> Listing:
     )
     claims[claim.id] = claim
 
-    updated = listing.model_copy(update={"status": ListingStatus.claimed})
+    new_quantity = listing.quantity - payload.claimed_quantity
+    new_status = ListingStatus.claimed if new_quantity == 0 else listing.status
+    updated = listing.model_copy(update={"quantity": new_quantity, "status": new_status})
     listings[listing_id] = updated
     return updated
 
@@ -308,52 +336,3 @@ def admin_get_stats() -> AdminStats:
     )
 
 
-# ---------------------------------------------------------------------------
-# Admin endpoints
-# ---------------------------------------------------------------------------
-
-
-class AdminStats(BaseModel):
-    active_listings: int
-    claimed_listings: int
-    expired_listings: int
-    total_claims: int
-    meals_saved: int
-
-
-@app.get("/api/v1/admin/listings", response_model=list[Listing])
-def admin_get_all_listings() -> list[Listing]:
-    """Return every listing regardless of status (runs expiry check first)."""
-    _expire_listings()
-    return list(listings.values())
-
-
-@app.delete("/api/v1/listings/{listing_id}", response_model=Listing)
-def delete_listing(listing_id: str) -> Listing:
-    """Permanently remove a listing from in-memory storage."""
-    listing = listings.pop(listing_id, None)
-    if not listing:
-        raise HTTPException(status_code=404, detail="Listing not found")
-    return listing
-
-
-@app.get("/api/v1/admin/stats", response_model=AdminStats)
-def admin_get_stats() -> AdminStats:
-    """Aggregate stats across all listings and claims."""
-    _expire_listings()
-
-    status_counts: dict[ListingStatus, int] = {s: 0 for s in ListingStatus}
-    meals_saved = 0
-
-    for listing in listings.values():
-        status_counts[listing.status] += 1
-        if listing.status == "claimed":
-            meals_saved += listing.quantity
-
-    return AdminStats(
-        active_listings=status_counts["active"],
-        claimed_listings=status_counts["claimed"],
-        expired_listings=status_counts["expired"],
-        total_claims=len(claims),
-        meals_saved=meals_saved,
-    )

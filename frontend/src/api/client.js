@@ -12,7 +12,19 @@ async function handleResponse(res) {
   } catch {
     // ignore parse errors — keep the status-based message
   }
-  throw new Error(message)
+
+  let code = 'UNKNOWN'
+  if (res.status === 404) {
+    code = 'NOT_FOUND'
+  } else if (res.status === 409) {
+    code = message.toLowerCase().includes('already claimed') ? 'ALREADY_CLAIMED' : 'UNAVAILABLE'
+  } else if (res.status === 422) {
+    code = 'OVER_QUANTITY'
+  }
+
+  const err = new Error(message)
+  err.code = code
+  throw err
 }
 
 function request(path) {

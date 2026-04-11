@@ -19,7 +19,7 @@ export default function RecipientFeed() {
   const [listings, setListings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [claimingId, setClaimingId] = useState(null);
+  const [claimingIds, setClaimingIds] = useState(new Set());
   const [viewMode, setViewMode] = useState("list");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTag, setSelectedTag] = useState("all");
@@ -153,9 +153,22 @@ export default function RecipientFeed() {
 
   const handleClaim = async (listing) => {
     const requestedQuantity = Number(claimCounts[listing.id] || 1);
+    const maxQuantity = Number(listing.quantity || 1);
+
+    // Client-side guardrail — clamp before hitting the network
+    if (requestedQuantity < 1 || requestedQuantity > maxQuantity) {
+      showNotification(
+        `Please enter a quantity between 1 and ${maxQuantity}.`,
+        "error"
+      );
+      return;
+    }
+
+    // Per-listing double-submit prevention
+    if (claimingIds.has(listing.id)) return;
+    setClaimingIds((prev) => new Set(prev).add(listing.id));
 
     try {
-      setClaimingId(listing.id);
       await apiClaimListing(listing.id, userId, requestedQuantity);
       showNotification(
         `Pickup secured for ${requestedQuantity} item${requestedQuantity > 1 ? "s" : ""}.`,
@@ -163,9 +176,21 @@ export default function RecipientFeed() {
       );
       await fetchListings();
     } catch (err) {
-      showNotification(err.message || "Could not complete that claim right now.", "error");
+      let msg = err.message || "Could not complete that claim right now.";
+      if (err.code === "ALREADY_CLAIMED") {
+        msg = "You have already claimed this listing.";
+      } else if (err.code === "OVER_QUANTITY") {
+        msg = `Only ${listing.quantity} available — reduce your quantity and try again.`;
+      } else if (err.code === "UNAVAILABLE") {
+        msg = "This listing is no longer available for claiming.";
+      }
+      showNotification(msg, "error");
     } finally {
-      setClaimingId(null);
+      setClaimingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(listing.id);
+        return next;
+      });
     }
   };
 
@@ -346,9 +371,13 @@ export default function RecipientFeed() {
                       </p>
                       <button
                         onClick={() => handleClaim(listing)}
-                        style={styles.popupButton}
+                        disabled={claimingIds.has(listing.id)}
+                        style={{
+                          ...styles.popupButton,
+                          ...(claimingIds.has(listing.id) ? { opacity: 0.7, cursor: "not-allowed" } : {}),
+                        }}
                       >
-                        Claim now
+                        {claimingIds.has(listing.id) ? "Claiming..." : "Claim now"}
                       </button>
                     </div>
                   </Popup>
@@ -452,15 +481,15 @@ export default function RecipientFeed() {
 
                   <button
                     onClick={() => handleClaim(listing)}
-                    disabled={claimingId === listing.id}
+                    disabled={claimingIds.has(listing.id)}
                     style={{
                       ...styles.claimButton,
-                      ...(claimingId === listing.id
+                      ...(claimingIds.has(listing.id)
                         ? styles.claimButtonDisabled
                         : {}),
                     }}
                   >
-                    {claimingId === listing.id ? "Claiming..." : "Reserve pickup"}
+                    {claimingIds.has(listing.id) ? "Claiming..." : "Reserve pickup"}
                   </button>
                 </div>
               </div>
@@ -529,7 +558,7 @@ const styles = {
     position: "relative",
     overflow: "hidden",
     background:
-      "radial-gradient(circle at top left, rgba(34,197,94,0.28), transparent 30%), radial-gradient(circle at top right, rgba(59,130,246,0.22), transparent 28%), linear-gradient(135deg, #0f172a 0%, #111827 48%, #020617 100%)",
+      "radial-gradient(circle at top left, rgba(34,197,94,0.22), transparent 30%), radial-gradient(circle at top right, rgba(249,115,22,0.28), transparent 28%), linear-gradient(135deg, #0f172a 0%, #111827 48%, #020617 100%)",
     border: "1px solid rgba(148,163,184,0.18)",
     borderRadius: 24,
     padding: 28,
@@ -726,7 +755,7 @@ const styles = {
     fontWeight: 700,
   },
   viewButtonActive: {
-    background: "linear-gradient(135deg, #2563eb, #06b6d4)",
+    background: "linear-gradient(135deg, #f97316, #22c55e)",
     color: "#fff",
   },
   statsRow: {
@@ -774,7 +803,7 @@ const styles = {
     border: "none",
     borderRadius: 10,
     padding: "10px 12px",
-    background: "linear-gradient(135deg, #2563eb, #06b6d4)",
+    background: "linear-gradient(135deg, #f97316, #22c55e)",
     color: "#fff",
     fontWeight: 700,
     cursor: "pointer",
@@ -809,7 +838,7 @@ const styles = {
   emptyIcon: {
     fontSize: 40,
     marginBottom: 12,
-    color: "#60a5fa",
+    color: "#fb923c",
   },
   emptyTitle: {
     margin: 0,
@@ -822,7 +851,7 @@ const styles = {
   },
   listingCard: {
     background:
-      "radial-gradient(circle at top right, rgba(37,99,235,0.14), transparent 24%), linear-gradient(180deg, rgba(15,23,42,0.96), rgba(2,6,23,0.96))",
+      "radial-gradient(circle at top right, rgba(249,115,22,0.1), transparent 24%), linear-gradient(180deg, rgba(15,23,42,0.96), rgba(2,6,23,0.96))",
     border: "1px solid rgba(148,163,184,0.16)",
     borderRadius: 22,
     padding: 22,
@@ -839,8 +868,8 @@ const styles = {
     display: "inline-flex",
     padding: "6px 10px",
     borderRadius: 999,
-    background: "rgba(59,130,246,0.14)",
-    color: "#93c5fd",
+    background: "rgba(249,115,22,0.14)",
+    color: "#fdba74",
     fontSize: 12,
     fontWeight: 700,
     marginBottom: 12,
@@ -966,12 +995,12 @@ const styles = {
     border: "none",
     borderRadius: 14,
     padding: "14px 18px",
-    background: "linear-gradient(135deg, #2563eb, #22c55e)",
+    background: "linear-gradient(135deg, #f97316, #22c55e)",
     color: "#fff",
     fontWeight: 800,
     cursor: "pointer",
     minWidth: 170,
-    boxShadow: "0 14px 28px rgba(37,99,235,0.22)",
+    boxShadow: "0 14px 28px rgba(249,115,22,0.28)",
   },
   claimButtonDisabled: {
     opacity: 0.7,

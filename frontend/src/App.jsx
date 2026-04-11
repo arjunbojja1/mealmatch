@@ -20,7 +20,7 @@ function App() {
       <header style={styles.header}>
         <div style={styles.headerInner}>
           <div style={styles.brand}>
-            <span style={styles.brandEmoji}>🍽</span>
+            <img src="/MealMatch Logo.png" alt="MealMatch" style={styles.logo} />
             <div>
               <span style={styles.brandName}>MealMatch</span>
               <span style={styles.brandTagline}>Connecting communities through food</span>
@@ -110,9 +110,10 @@ const styles = {
     gap: '10px',
     flexShrink: 0,
   },
-  brandEmoji: {
-    fontSize: '26px',
-    lineHeight: 1,
+  logo: {
+    height: '38px',
+    width: 'auto',
+    borderRadius: '8px',
   },
   brandName: {
     display: 'block',
@@ -148,8 +149,8 @@ const styles = {
     fontFamily: 'inherit',
   },
   tabBtnActive: {
-    background: 'rgba(34,197,94,0.12)',
-    color: '#22c55e',
+    background: 'rgba(249,115,22,0.12)',
+    color: '#f97316',
   },
   statusPill: {
     display: 'flex',

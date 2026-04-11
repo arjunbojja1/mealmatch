@@ -98,7 +98,7 @@ export default function AdminDashboard() {
 
   const statusColors = {
     active: { bg: "rgba(34,197,94,0.12)", color: "#86efac", border: "rgba(34,197,94,0.25)" },
-    claimed: { bg: "rgba(59,130,246,0.12)", color: "#93c5fd", border: "rgba(59,130,246,0.25)" },
+    claimed: { bg: "rgba(34,197,94,0.12)", color: "#86efac", border: "rgba(34,197,94,0.25)" },
     expired: { bg: "rgba(148,163,184,0.1)", color: "#94a3b8", border: "rgba(148,163,184,0.2)" },
   };
 
@@ -124,7 +124,7 @@ export default function AdminDashboard() {
       <div style={styles.statsRow}>
         {[
           { label: "Active Listings", value: active.length, accent: "#22c55e" },
-          { label: "Claimed Listings", value: claimed.length, accent: "#3b82f6" },
+          { label: "Claimed Listings", value: claimed.length, accent: "#f97316" },
           { label: "Expired Listings", value: expired.length, accent: "#94a3b8" },
           { label: "Meals Saved", value: mealsSaved, accent: "#f97316" },
         ].map((s) => (
@@ -308,7 +308,7 @@ const styles = {
   },
   hero: {
     background:
-      "radial-gradient(circle at top right, rgba(59,130,246,0.14), transparent 35%), linear-gradient(135deg, #0a1628 0%, #020817 100%)",
+      "radial-gradient(circle at top right, rgba(249,115,22,0.14), transparent 35%), linear-gradient(135deg, #0a1628 0%, #020817 100%)",
     border: "1px solid rgba(148,163,184,0.12)",
     borderRadius: 24,
     padding: "32px",
@@ -398,9 +398,9 @@ const styles = {
     fontFamily: "inherit",
   },
   tabBtnActive: {
-    background: "rgba(59,130,246,0.12)",
-    border: "1px solid rgba(59,130,246,0.3)",
-    color: "#93c5fd",
+    background: "rgba(249,115,22,0.12)",
+    border: "1px solid rgba(249,115,22,0.3)",
+    color: "#fdba74",
   },
   tabCount: {
     padding: "2px 8px",
@@ -411,8 +411,8 @@ const styles = {
     fontWeight: 700,
   },
   tabCountActive: {
-    background: "rgba(59,130,246,0.18)",
-    color: "#93c5fd",
+    background: "rgba(249,115,22,0.18)",
+    color: "#fdba74",
   },
   skeletonCard: {
     minHeight: 200,
@@ -470,7 +470,7 @@ const styles = {
     fontWeight: 500,
   },
   metaVal: {
-    color: "#93c5fd",
+    color: "#fdba74",
     fontWeight: 600,
   },
   statusBadge: {
@@ -553,9 +553,9 @@ const styles = {
   btnBlue: {
     padding: "9px 14px",
     borderRadius: 10,
-    border: "1px solid rgba(59,130,246,0.3)",
-    background: "rgba(59,130,246,0.12)",
-    color: "#93c5fd",
+    border: "1px solid rgba(249,115,22,0.3)",
+    background: "rgba(249,115,22,0.12)",
+    color: "#fdba74",
     fontWeight: 700,
     fontSize: 13,
     cursor: "pointer",
