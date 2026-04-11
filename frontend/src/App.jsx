@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { getApiBaseUrl, getHealth } from './api/client'
+import { getHealth } from './api/client'
+import RecipientFeed from './components/RecipientFeed'
 import RestaurantDashboard from './RestaurantDashboard'
-import './App.css'
-import RecipientFeed from "./components/RecipientFeed";
 import './App.css'
 
 function App() {
