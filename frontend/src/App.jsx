@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { getApiBaseUrl, getHealth, getHello, postEcho } from './api/client'
+import RestaurantDashboard from './RestaurantDashboard'
 import './App.css'
 import RecipientFeed from "./components/RecipientFeed";
 
 function App() {
   const apiBaseUrl = getApiBaseUrl()
   const [apiMessage, setApiMessage] = useState('Checking backend...')
+  const [backendHealthy, setBackendHealthy] = useState(false)
   const [echoInput, setEchoInput] = useState('hello')
   const [echoResult, setEchoResult] = useState('')
   const [echoError, setEchoError] = useState('')
@@ -13,9 +15,11 @@ function App() {
   async function checkBackend() {
     try {
       const [health, hello] = await Promise.all([getHealth(), getHello()])
-      setApiMessage(`${hello.message} (${health.status})`)
+      setApiMessage(`${hello.message} • ${health.status}`)
+      setBackendHealthy(true)
     } catch {
       setApiMessage(`Backend unavailable at ${getApiBaseUrl()}`)
+      setBackendHealthy(false)
     }
   }
 
@@ -29,6 +33,7 @@ function App() {
 
   async function sendEcho() {
     const text = echoInput.trim()
+
     if (!text) {
       setEchoError('Enter text before sending.')
       setEchoResult('')
@@ -46,27 +51,42 @@ function App() {
   }
 
   return (
-    <main className="dashboard">
-      <header className="dashboard-header">
-        <h1>bitcamp-2026</h1>
-        <p>Hackathon Dashboard</p>
-      </header>
+    <div style={styles.appShell}>
+      <header style={styles.topbar}>
+        <div>
+          <p style={styles.brandKicker}>Bitcamp 2026 • MealMatch</p>
+          <h1 style={styles.brandTitle}>Restaurant Operations Portal</h1>
+          <p style={styles.brandSubtitle}>
+            Manage surplus food listings, monitor backend health, and demo your product in one place.
+          </p>
+        </div>
 
-      <section className="panel">
-        <h2>Backend Status</h2>
-        <p>{apiMessage}</p>
-        <p>
-          API base URL: <code>{apiBaseUrl}</code>
-        </p>
-        <div className="actions">
-          <button className="counter" onClick={checkBackend}>
-            Refresh status
-          </button>
-          <a className="counter" href={`${apiBaseUrl}/docs`} target="_blank">
-            Open API docs
+        <div style={styles.topbarRight}>
+          <div
+            style={{
+              ...styles.statusPill,
+              ...(backendHealthy ? styles.statusHealthy : styles.statusOffline),
+            }}
+          >
+            <span style={styles.statusDot} />
+            {backendHealthy ? 'Backend Connected' : 'Backend Offline'}
+          </div>
+
+          <a
+            href={`${apiBaseUrl}/docs`}
+            target="_blank"
+            rel="noreferrer"
+            style={styles.primaryLink}
+          >
+            Open API Docs
           </a>
         </div>
-      </section>
+      </header>
+
+      <main style={styles.mainLayout}>
+        <section style={styles.dashboardPanel}>
+          <RestaurantDashboard />
+        </section>
 
       <section className="panel">
         <h2>Quick Start</h2>
