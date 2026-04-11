@@ -71,7 +71,7 @@ export default function RecipientFeed() {
   const [claimCounts, setClaimCounts] = useState({});
   const [usingDemoMode, setUsingDemoMode] = useState(false);
 
-  const userId = 1;
+  const userId = "user-demo";
 
   const fetchListings = async () => {
     try {
@@ -616,9 +616,10 @@ function formatMinutesLeft(minutes) {
 
 const styles = {
   shell: {
-    marginTop: 24,
+    maxWidth: 1400,
+    margin: "0 auto",
+    padding: "28px 24px 48px",
     width: "100%",
-    padding: 0,
     color: "#f8fafc",
     fontFamily:
       "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
