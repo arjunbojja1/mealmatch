@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getApiBaseUrl, getHealth, getHello, postEcho } from './api/client'
 import './App.css'
+import RecipientFeed from "./components/RecipientFeed";
 
 function App() {
   const apiBaseUrl = getApiBaseUrl()
@@ -104,6 +105,7 @@ function App() {
       </section>
 
       <section className="panel">
+        <RecipientFeed />;
         <h2>Hackathon Targets</h2>
         <ul>
           <li>Define API contract for first feature.</li>
@@ -113,6 +115,8 @@ function App() {
       </section>
     </main>
   )
+  
+
 }
 
 export default App
