@@ -48,7 +48,9 @@ function patch(path, body) {
 }
 
 function del(path) {
-  return fetch(`${API_BASE_URL}${path}`, { method: 'DELETE' }).then(handleResponse)
+  return fetch(`${API_BASE_URL}${path}`, {
+    method: 'DELETE',
+  }).then(handleResponse)
 }
 
 // ─── Exports ─────────────────────────────────────────────────────────────────

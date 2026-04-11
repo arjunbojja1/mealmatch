@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { getAdminListings, createListing, updateListingStatus } from "./api/client";
+import {
+  getAdminListings,
+  createListing,
+  updateListingStatus,
+} from "./api/client";
 
 const dietaryOptions = [
   "vegetarian",
@@ -22,12 +26,12 @@ export default function RestaurantDashboard() {
   const [listings, setListings] = useState([]);
   const [selectedTab, setSelectedTab] = useState("active");
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  const restaurantId = "rest-101";
+  const restaurantId = "rest-001";
 
   useEffect(() => {
     fetchListings();
@@ -37,13 +41,16 @@ export default function RestaurantDashboard() {
     try {
       setIsLoading(true);
       setError("");
+
       const data = await getAdminListings();
-      const mine = Array.isArray(data)
-        ? data.filter((l) => l.restaurant_id === restaurantId)
+
+      const restaurantListings = Array.isArray(data)
+        ? data.filter((listing) => listing.restaurant_id === restaurantId)
         : [];
-      setListings(mine);
+
+      setListings(restaurantListings);
     } catch (err) {
-      setError(err.message || "Failed to load listings.");
+      setError(err.message || "Something went wrong while loading listings.");
     } finally {
       setIsLoading(false);
     }
@@ -51,6 +58,7 @@ export default function RestaurantDashboard() {
 
   function handleChange(e) {
     const { name, value } = e.target;
+
     setFormData((prev) => ({
       ...prev,
       [name]: value,
@@ -98,7 +106,9 @@ export default function RestaurantDashboard() {
 
     try {
       setIsSubmitting(true);
+
       await createListing(payload);
+
       setFormData({
         title: "",
         description: "",
@@ -107,36 +117,61 @@ export default function RestaurantDashboard() {
         pickup_start: "",
         pickup_end: "",
       });
+
       await fetchListings();
       setSuccessMessage("Listing created successfully.");
       setSelectedTab("active");
     } catch (err) {
-      setError(err.message || "Failed to create listing.");
+      setError(err.message || "Something went wrong while creating the listing.");
     } finally {
       setIsSubmitting(false);
     }
   }
 
   async function handleStatusUpdate(listingId, newStatus) {
-    setError("");
-    setSuccessMessage("");
     try {
+      setError("");
+      setSuccessMessage("");
+
       await updateListingStatus(listingId, newStatus);
-      setSuccessMessage(`Listing marked as ${newStatus}.`);
       await fetchListings();
+
+      setSuccessMessage(`Listing marked as ${newStatus}.`);
     } catch (err) {
-      setError(err.message || "Failed to update listing status.");
+      setError(err.message || "Something went wrong while updating the listing.");
     }
   }
 
-  const activeListings = useMemo(() => listings.filter((l) => l.status === "active"), [listings]);
-  const claimedListings = useMemo(() => listings.filter((l) => l.status === "claimed"), [listings]);
-  const expiredListings = useMemo(() => listings.filter((l) => l.status === "expired"), [listings]);
-
-  const totalMeals = useMemo(
-    () => listings.reduce((sum, l) => sum + Number(l.quantity || 0), 0),
+  const activeListings = useMemo(
+    () =>
+      listings.filter(
+        (listing) => (listing.status || "").toLowerCase() === "active"
+      ),
     [listings]
   );
+
+  const claimedListings = useMemo(
+    () =>
+      listings.filter(
+        (listing) => (listing.status || "").toLowerCase() === "claimed"
+      ),
+    [listings]
+  );
+
+  const expiredListings = useMemo(
+    () =>
+      listings.filter(
+        (listing) => (listing.status || "").toLowerCase() === "expired"
+      ),
+    [listings]
+  );
+
+  const totalMeals = useMemo(() => {
+    return listings.reduce(
+      (sum, listing) => sum + Number(listing.quantity || 0),
+      0
+    );
+  }, [listings]);
 
   const tabCounts = {
     active: activeListings.length,
@@ -158,8 +193,8 @@ export default function RestaurantDashboard() {
           <p style={styles.eyebrow}>MealMatch • Restaurant Portal</p>
           <h1 style={styles.heroTitle}>Restaurant Dashboard</h1>
           <p style={styles.heroText}>
-            Create surplus food listings, manage inventory statuses, and monitor what
-            is active, claimed, or expired in real time.
+            Create surplus food listings, manage statuses, and monitor active,
+            claimed, and expired inventory from backend-synced data.
           </p>
         </div>
 
@@ -298,7 +333,8 @@ export default function RestaurantDashboard() {
             <p style={styles.sectionKicker}>Listing Management</p>
             <h2 style={styles.sectionTitle}>Manage Listings</h2>
             <p style={styles.sectionText}>
-              View active, claimed, and expired listings and update them for the demo.
+              View active, claimed, and expired listings and keep them synced
+              with backend data.
             </p>
           </div>
 
@@ -348,19 +384,31 @@ export default function RestaurantDashboard() {
                   <div style={styles.listingHeader}>
                     <div>
                       <p style={styles.listingId}>Listing #{listing.id}</p>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '6px' }}>
-                        <h3 style={{ ...styles.listingTitle, marginBottom: 0 }}>{listing.title}</h3>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                          flexWrap: "wrap",
+                          marginBottom: "6px",
+                        }}
+                      >
+                        <h3 style={{ ...styles.listingTitle, marginBottom: 0 }}>
+                          {listing.title}
+                        </h3>
                         {listing.is_urgent && (
-                          <span style={{
-                            padding: '4px 10px',
-                            borderRadius: '999px',
-                            background: 'rgba(249,115,22,0.16)',
-                            color: '#f97316',
-                            fontSize: '12px',
-                            fontWeight: 700,
-                            border: '1px solid rgba(249,115,22,0.3)',
-                            flexShrink: 0,
-                          }}>
+                          <span
+                            style={{
+                              padding: "4px 10px",
+                              borderRadius: "999px",
+                              background: "rgba(249,115,22,0.16)",
+                              color: "#f97316",
+                              fontSize: "12px",
+                              fontWeight: 700,
+                              border: "1px solid rgba(249,115,22,0.3)",
+                              flexShrink: 0,
+                            }}
+                          >
                             ⚡ Urgent
                           </span>
                         )}
