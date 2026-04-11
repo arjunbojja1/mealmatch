@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getHealth } from './api/client'
 import RecipientFeed from './components/RecipientFeed'
 import RestaurantDashboard from './RestaurantDashboard'
+import AdminDashboard from './AdminDashboard'
 import './App.css'
 
 function App() {
@@ -27,24 +28,22 @@ function App() {
           </div>
 
           <nav style={styles.tabNav}>
-            <button
-              onClick={() => setActiveTab('browse')}
-              style={{
-                ...styles.tabBtn,
-                ...(activeTab === 'browse' ? styles.tabBtnActive : {}),
-              }}
-            >
-              Browse Food
-            </button>
-            <button
-              onClick={() => setActiveTab('restaurant')}
-              style={{
-                ...styles.tabBtn,
-                ...(activeTab === 'restaurant' ? styles.tabBtnActive : {}),
-              }}
-            >
-              Restaurant Portal
-            </button>
+            {[
+              { key: 'browse', label: 'Browse Food' },
+              { key: 'restaurant', label: 'Restaurant Portal' },
+              { key: 'admin', label: 'Admin' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                style={{
+                  ...styles.tabBtn,
+                  ...(activeTab === key ? styles.tabBtnActive : {}),
+                }}
+              >
+                {label}
+              </button>
+            ))}
           </nav>
 
           <div style={styles.statusPill}>
@@ -71,7 +70,9 @@ function App() {
       </header>
 
       <main style={styles.main}>
-        {activeTab === 'browse' ? <RecipientFeed /> : <RestaurantDashboard />}
+        {activeTab === 'browse' && <RecipientFeed />}
+        {activeTab === 'restaurant' && <RestaurantDashboard />}
+        {activeTab === 'admin' && <AdminDashboard />}
       </main>
     </div>
   )

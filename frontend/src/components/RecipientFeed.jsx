@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-
-const API_BASE = "http://localhost:8000/api/v1";
+import { getListings, claimListing as apiClaimListing } from "../api/client";
 
 const defaultCenter = [38.9869, -76.9426];
 
@@ -16,51 +15,10 @@ const markerIcon = new L.Icon({
   iconAnchor: [12, 41],
 });
 
-const demoListings = [
-  {
-    id: 1,
-    title: "Fresh Veggie Wraps",
-    description: "Six ready-to-pickup wraps from today's lunch rush.",
-    quantity: 6,
-    dietary_tags: ["vegetarian", "contains_dairy"],
-    pickup_start: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-    pickup_end: new Date(Date.now() + 55 * 60 * 1000).toISOString(),
-    status: "active",
-    created_at: new Date().toISOString(),
-    location_name: "Campus Café",
-    location: { lat: 38.9882, lng: -76.9441 },
-  },
-  {
-    id: 2,
-    title: "Halal Rice Bowls",
-    description: "Eight bowls available for quick pickup before close.",
-    quantity: 8,
-    dietary_tags: ["halal", "high_protein"],
-    pickup_start: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-    pickup_end: new Date(Date.now() + 40 * 60 * 1000).toISOString(),
-    status: "active",
-    created_at: new Date().toISOString(),
-    location_name: "Union Kitchen",
-    location: { lat: 38.9854, lng: -76.9398 },
-  },
-  {
-    id: 3,
-    title: "Bakery Box",
-    description: "Assorted pastries and bread, best picked up soon.",
-    quantity: 4,
-    dietary_tags: ["vegetarian"],
-    pickup_start: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-    pickup_end: new Date(Date.now() + 25 * 60 * 1000).toISOString(),
-    status: "active",
-    created_at: new Date().toISOString(),
-    location_name: "Main Street Bakery",
-    location: { lat: 38.9838, lng: -76.9475 },
-  },
-];
-
 export default function RecipientFeed() {
   const [listings, setListings] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [claimingId, setClaimingId] = useState(null);
   const [viewMode, setViewMode] = useState("list");
   const [searchTerm, setSearchTerm] = useState("");
@@ -69,32 +27,19 @@ export default function RecipientFeed() {
   const [showUrgentOnly, setShowUrgentOnly] = useState(false);
   const [notification, setNotification] = useState(null);
   const [claimCounts, setClaimCounts] = useState({});
-  const [usingDemoMode, setUsingDemoMode] = useState(false);
 
   const userId = "user-demo";
 
   const fetchListings = async () => {
     try {
-      setLoading(true);
-      const response = await fetch(`${API_BASE}/listings`);
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch listings");
-      }
-
-      const data = await response.json();
-      const normalized = Array.isArray(data) ? data : [];
-      setListings(normalized);
-      setUsingDemoMode(false);
-    } catch (error) {
-      setListings(demoListings);
-      setUsingDemoMode(true);
-      showNotification(
-        "Running in polished demo mode because the backend feed is unavailable.",
-        "warning"
-      );
+      setIsLoading(true);
+      setError(null);
+      const data = await getListings();
+      setListings(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err.message || "Could not load listings. Is the backend running?");
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -211,69 +156,14 @@ export default function RecipientFeed() {
 
     try {
       setClaimingId(listing.id);
-
-      if (usingDemoMode) {
-        setListings((prev) =>
-          prev.map((item) => {
-            if (item.id !== listing.id) return item;
-            const remaining = Math.max(
-              0,
-              Number(item.quantity || 0) - requestedQuantity
-            );
-            return {
-              ...item,
-              quantity: remaining,
-              status: remaining === 0 ? "claimed" : "active",
-            };
-          })
-        );
-        showNotification(
-          `Reserved ${requestedQuantity} item${
-            requestedQuantity > 1 ? "s" : ""
-          } from ${listing.title}.`,
-          "success"
-        );
-        return;
-      }
-
-      const response = await fetch(`${API_BASE}/listings/${listing.id}/claim`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          user_id: userId,
-          claimed_quantity: requestedQuantity,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Claim failed");
-      }
-
-      setListings((prev) =>
-        prev.map((item) => {
-          if (item.id !== listing.id) return item;
-          const remaining = Math.max(
-            0,
-            Number(item.quantity || 0) - requestedQuantity
-          );
-          return {
-            ...item,
-            quantity: remaining,
-            status: remaining === 0 ? "claimed" : "active",
-          };
-        })
-      );
-
+      await apiClaimListing(listing.id, userId, requestedQuantity);
       showNotification(
-        `Pickup secured for ${requestedQuantity} item${
-          requestedQuantity > 1 ? "s" : ""
-        }.`,
+        `Pickup secured for ${requestedQuantity} item${requestedQuantity > 1 ? "s" : ""}.`,
         "success"
       );
-    } catch (error) {
-      showNotification("Could not complete that claim right now.", "error");
+      await fetchListings();
+    } catch (err) {
+      showNotification(err.message || "Could not complete that claim right now.", "error");
     } finally {
       setClaimingId(null);
     }
@@ -304,14 +194,25 @@ export default function RecipientFeed() {
         </div>
       </div>
 
+      {error && (
+        <div style={{ ...styles.notification, ...styles.notificationError }}>
+          <span style={styles.notificationPulse} />
+          {error}
+          <button
+            onClick={fetchListings}
+            style={{ marginLeft: "auto", background: "none", border: "none", color: "inherit", cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {notification && (
         <div
           style={{
             ...styles.notification,
             ...(notification.type === "success"
               ? styles.notificationSuccess
-              : notification.type === "warning"
-              ? styles.notificationWarning
               : styles.notificationError),
           }}
         >
@@ -404,7 +305,7 @@ export default function RecipientFeed() {
         </GlassCard>
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <div style={styles.cardGrid}>
           {[1, 2, 3].map((item) => (
             <div key={item} style={styles.skeletonCard}>

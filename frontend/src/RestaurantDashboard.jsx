@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-
-const API_BASE = "http://localhost:8000/api/v1";
+import { getAdminListings, createListing, updateListingStatus } from "./api/client";
 
 const dietaryOptions = [
   "vegetarian",
@@ -20,13 +19,11 @@ export default function RestaurantDashboard() {
     pickup_end: "",
   });
 
-  const [activeListings, setActiveListings] = useState([]);
-  const [claimedListings, setClaimedListings] = useState([]);
-  const [expiredListings, setExpiredListings] = useState([]);
+  const [listings, setListings] = useState([]);
   const [selectedTab, setSelectedTab] = useState("active");
 
-  const [loading, setLoading] = useState(false);
-  const [fetchingListings, setFetchingListings] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
@@ -38,25 +35,17 @@ export default function RestaurantDashboard() {
 
   async function fetchListings() {
     try {
-      setFetchingListings(true);
+      setIsLoading(true);
       setError("");
-
-      const response = await fetch(`${API_BASE}/listings`);
-      if (!response.ok) {
-        throw new Error("Failed to load listings.");
-      }
-
-      const data = await response.json();
-
-      const filteredListings = Array.isArray(data)
-        ? data.filter((listing) => listing.restaurant_id === restaurantId)
+      const data = await getAdminListings();
+      const mine = Array.isArray(data)
+        ? data.filter((l) => l.restaurant_id === restaurantId)
         : [];
-
-      setActiveListings(filteredListings);
+      setListings(mine);
     } catch (err) {
-      setError(err.message || "Something went wrong while loading listings.");
+      setError(err.message || "Failed to load listings.");
     } finally {
-      setFetchingListings(false);
+      setIsLoading(false);
     }
   }
 
@@ -108,20 +97,8 @@ export default function RestaurantDashboard() {
     };
 
     try {
-      setLoading(true);
-
-      const response = await fetch(`${API_BASE}/listings`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to create listing.");
-      }
-
+      setIsSubmitting(true);
+      await createListing(payload);
       setFormData({
         title: "",
         description: "",
@@ -130,65 +107,36 @@ export default function RestaurantDashboard() {
         pickup_start: "",
         pickup_end: "",
       });
-
       await fetchListings();
       setSuccessMessage("Listing created successfully.");
       setSelectedTab("active");
     } catch (err) {
-      setError(err.message || "Something went wrong while creating the listing.");
+      setError(err.message || "Failed to create listing.");
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   }
 
-  async function updateListingStatus(listingId, newStatus) {
+  async function handleStatusUpdate(listingId, newStatus) {
+    setError("");
+    setSuccessMessage("");
     try {
-      setError("");
-      setSuccessMessage("");
-
-      const response = await fetch(`${API_BASE}/listings/${listingId}/status`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          status: newStatus,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to update listing status.");
-      }
-
-      const listingToMove = activeListings.find((listing) => listing.id === listingId);
-
-      setActiveListings((prev) => prev.filter((listing) => listing.id !== listingId));
-
-      if (listingToMove) {
-        const updatedListing = {
-          ...listingToMove,
-          status: newStatus,
-        };
-
-        if (newStatus === "claimed") {
-          setClaimedListings((prev) => [updatedListing, ...prev]);
-          setSuccessMessage("Listing marked as claimed.");
-        } else if (newStatus === "expired") {
-          setExpiredListings((prev) => [updatedListing, ...prev]);
-          setSuccessMessage("Listing marked as expired.");
-        } else {
-          setSuccessMessage(`Listing updated to ${newStatus}.`);
-        }
-      }
+      await updateListingStatus(listingId, newStatus);
+      setSuccessMessage(`Listing marked as ${newStatus}.`);
+      await fetchListings();
     } catch (err) {
-      setError(err.message || "Something went wrong while updating the listing.");
+      setError(err.message || "Failed to update listing status.");
     }
   }
 
-  const totalMeals = useMemo(() => {
-    const allListings = [...activeListings, ...claimedListings, ...expiredListings];
-    return allListings.reduce((sum, listing) => sum + Number(listing.quantity || 0), 0);
-  }, [activeListings, claimedListings, expiredListings]);
+  const activeListings = useMemo(() => listings.filter((l) => l.status === "active"), [listings]);
+  const claimedListings = useMemo(() => listings.filter((l) => l.status === "claimed"), [listings]);
+  const expiredListings = useMemo(() => listings.filter((l) => l.status === "expired"), [listings]);
+
+  const totalMeals = useMemo(
+    () => listings.reduce((sum, l) => sum + Number(l.quantity || 0), 0),
+    [listings]
+  );
 
   const tabCounts = {
     active: activeListings.length,
@@ -339,8 +287,8 @@ export default function RestaurantDashboard() {
             {error ? <div style={styles.errorBox}>{error}</div> : null}
             {successMessage ? <div style={styles.successBox}>{successMessage}</div> : null}
 
-            <button type="submit" style={styles.submitButton} disabled={loading}>
-              {loading ? "Creating Listing..." : "Create Listing"}
+            <button type="submit" style={styles.submitButton} disabled={isSubmitting}>
+              {isSubmitting ? "Creating Listing..." : "Create Listing"}
             </button>
           </form>
         </div>
@@ -384,7 +332,7 @@ export default function RestaurantDashboard() {
             </button>
           </div>
 
-          {fetchingListings && selectedTab === "active" ? (
+          {isLoading ? (
             <div style={styles.emptyState}>Loading listings...</div>
           ) : displayedListings.length === 0 ? (
             <div style={styles.emptyState}>
@@ -456,13 +404,13 @@ export default function RestaurantDashboard() {
                   {selectedTab === "active" ? (
                     <div style={styles.cardActions}>
                       <button
-                        onClick={() => updateListingStatus(listing.id, "claimed")}
+                        onClick={() => handleStatusUpdate(listing.id, "claimed")}
                         style={styles.claimButton}
                       >
                         Mark Claimed
                       </button>
                       <button
-                        onClick={() => updateListingStatus(listing.id, "expired")}
+                        onClick={() => handleStatusUpdate(listing.id, "expired")}
                         style={styles.expireButton}
                       >
                         Mark Expired
