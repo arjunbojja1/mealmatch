@@ -1,142 +1,182 @@
 import { useEffect, useState } from 'react'
-import { getApiBaseUrl, getHealth, postEcho } from './api/client'
+import { getApiBaseUrl, getHealth } from './api/client'
+import RecipientFeed from './RecipientFeed'
 import RestaurantDashboard from './RestaurantDashboard'
 import './App.css'
 import RecipientFeed from "./components/RecipientFeed";
 
 function App() {
-  const apiBaseUrl = getApiBaseUrl()
-  const [apiMessage, setApiMessage] = useState('Checking backend...')
-  const [backendHealthy, setBackendHealthy] = useState(false)
-  const [echoInput, setEchoInput] = useState('hello')
-  const [echoResult, setEchoResult] = useState('')
-  const [echoError, setEchoError] = useState('')
-
-  async function checkBackend() {
-    try {
-      const health = await getHealth()
-      setApiMessage(`MealMatch API is running • ${health.status}`)
-      setBackendHealthy(true)
-    } catch {
-      setApiMessage(`Backend unavailable at ${getApiBaseUrl()}`)
-      setBackendHealthy(false)
-    }
-  }
+  const [backendHealthy, setBackendHealthy] = useState(null)
+  const [activeTab, setActiveTab] = useState('browse')
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      checkBackend()
-    }, 0)
-
-    return () => clearTimeout(timer)
+    getHealth()
+      .then(() => setBackendHealthy(true))
+      .catch(() => setBackendHealthy(false))
   }, [])
-
-  async function sendEcho() {
-    const text = echoInput.trim()
-
-    if (!text) {
-      setEchoError('Enter text before sending.')
-      setEchoResult('')
-      return
-    }
-
-    try {
-      const data = await postEcho(text)
-      setEchoResult(`${data.echoed_text} (${data.length} chars)`)
-      setEchoError('')
-    } catch {
-      setEchoError('Echo request failed. Check backend server.')
-      setEchoResult('')
-    }
-  }
 
   return (
     <div style={styles.appShell}>
-      <header style={styles.topbar}>
-        <div>
-          <p style={styles.brandKicker}>Bitcamp 2026 • MealMatch</p>
-          <h1 style={styles.brandTitle}>Restaurant Operations Portal</h1>
-          <p style={styles.brandSubtitle}>
-            Manage surplus food listings, monitor backend health, and demo your product in one place.
-          </p>
-        </div>
-
-        <div style={styles.topbarRight}>
-          <div
-            style={{
-              ...styles.statusPill,
-              ...(backendHealthy ? styles.statusHealthy : styles.statusOffline),
-            }}
-          >
-            <span style={styles.statusDot} />
-            {backendHealthy ? 'Backend Connected' : 'Backend Offline'}
+      <header style={styles.header}>
+        <div style={styles.headerInner}>
+          <div style={styles.brand}>
+            <span style={styles.brandEmoji}>🍽</span>
+            <div>
+              <span style={styles.brandName}>MealMatch</span>
+              <span style={styles.brandTagline}>Connecting communities through food</span>
+            </div>
           </div>
 
-          <a
-            href={`${apiBaseUrl}/docs`}
-            target="_blank"
-            rel="noreferrer"
-            style={styles.primaryLink}
-          >
-            Open API Docs
-          </a>
+          <nav style={styles.tabNav}>
+            <button
+              onClick={() => setActiveTab('browse')}
+              style={{
+                ...styles.tabBtn,
+                ...(activeTab === 'browse' ? styles.tabBtnActive : {}),
+              }}
+            >
+              Browse Food
+            </button>
+            <button
+              onClick={() => setActiveTab('restaurant')}
+              style={{
+                ...styles.tabBtn,
+                ...(activeTab === 'restaurant' ? styles.tabBtnActive : {}),
+              }}
+            >
+              Restaurant Portal
+            </button>
+          </nav>
+
+          <div style={styles.statusPill}>
+            <span
+              style={{
+                ...styles.statusDot,
+                background:
+                  backendHealthy === null
+                    ? '#94a3b8'
+                    : backendHealthy
+                    ? '#22c55e'
+                    : '#ef4444',
+              }}
+            />
+            <span style={styles.statusText}>
+              {backendHealthy === null
+                ? 'Checking...'
+                : backendHealthy
+                ? 'Live'
+                : 'Offline'}
+            </span>
+          </div>
         </div>
       </header>
 
-      <main style={styles.mainLayout}>
-        <section style={styles.dashboardPanel}>
-          <RestaurantDashboard />
-        </section>
-
-      <section className="panel">
-        <h2>Quick Start</h2>
-        <ul>
-          <li>
-            <code>make setup</code>
-          </li>
-          <li>
-            <code>make dev-backend</code>
-          </li>
-          <li>
-            <code>make dev-frontend</code>
-          </li>
-          <li>
-            <code>make lint && make smoke</code>
-          </li>
-        </ul>
-      </section>
-
-      <section className="panel">
-        <h2>Pydantic Echo Demo</h2>
-        <div className="actions">
-          <input
-            className="text-input"
-            type="text"
-            value={echoInput}
-            onChange={(event) => setEchoInput(event.target.value)}
-            placeholder="Type text (1-200 chars)"
-          />
-          <button className="counter" onClick={sendEcho}>
-            Send echo
-          </button>
-        </div>
-        {echoResult ? <p>Response: {echoResult}</p> : null}
-        {echoError ? <p>{echoError}</p> : null}
-      </section>
-
-      <section className="panel">
-        <RecipientFeed />;
-        <h2>Hackathon Targets</h2>
-        <ul>
-          <li>Define API contract for first feature.</li>
-          <li>Ship one vertical slice end-to-end.</li>
-          <li>Keep PRs small and CI green.</li>
-        </ul>
-      </section>
-    </main>
+      <main style={styles.main}>
+        {activeTab === 'browse' ? <RecipientFeed /> : <RestaurantDashboard />}
+      </main>
+    </div>
   )
-  
+}
 
+const styles = {
+  appShell: {
+    minHeight: '100svh',
+    display: 'flex',
+    flexDirection: 'column',
+    background: '#020817',
+  },
+  header: {
+    position: 'sticky',
+    top: 0,
+    zIndex: 100,
+    height: '64px',
+    background: 'rgba(2,8,23,0.82)',
+    backdropFilter: 'blur(20px)',
+    WebkitBackdropFilter: 'blur(20px)',
+    borderBottom: '1px solid rgba(148,163,184,0.12)',
+  },
+  headerInner: {
+    maxWidth: '1400px',
+    margin: '0 auto',
+    padding: '0 24px',
+    height: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '24px',
+  },
+  brand: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    flexShrink: 0,
+  },
+  brandEmoji: {
+    fontSize: '26px',
+    lineHeight: 1,
+  },
+  brandName: {
+    display: 'block',
+    fontSize: '18px',
+    fontWeight: 800,
+    color: '#f1f5f9',
+    lineHeight: 1.15,
+    letterSpacing: '-0.02em',
+  },
+  brandTagline: {
+    display: 'block',
+    fontSize: '11px',
+    color: 'rgba(148,163,184,0.7)',
+    fontWeight: 500,
+    letterSpacing: '0.01em',
+  },
+  tabNav: {
+    display: 'flex',
+    gap: '4px',
+    flex: 1,
+    justifyContent: 'center',
+  },
+  tabBtn: {
+    padding: '8px 18px',
+    borderRadius: '8px',
+    border: 'none',
+    background: 'transparent',
+    color: 'rgba(148,163,184,0.7)',
+    fontWeight: 600,
+    fontSize: '14px',
+    cursor: 'pointer',
+    transition: 'background 0.15s, color 0.15s',
+    fontFamily: 'inherit',
+  },
+  tabBtnActive: {
+    background: 'rgba(34,197,94,0.12)',
+    color: '#22c55e',
+  },
+  statusPill: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '7px',
+    padding: '7px 14px',
+    borderRadius: '999px',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(148,163,184,0.14)',
+    flexShrink: 0,
+  },
+  statusDot: {
+    width: '8px',
+    height: '8px',
+    borderRadius: '50%',
+    flexShrink: 0,
+  },
+  statusText: {
+    fontSize: '13px',
+    fontWeight: 700,
+    color: '#cbd5e1',
+  },
+  main: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+  },
 }
 
 export default App

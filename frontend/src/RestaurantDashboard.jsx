@@ -207,7 +207,7 @@ export default function RestaurantDashboard() {
     <div style={styles.page}>
       <section style={styles.hero}>
         <div>
-          <p style={styles.eyebrow}>MealLoop • Restaurant Portal</p>
+          <p style={styles.eyebrow}>MealMatch • Restaurant Portal</p>
           <h1 style={styles.heroTitle}>Restaurant Dashboard</h1>
           <p style={styles.heroText}>
             Create surplus food listings, manage inventory statuses, and monitor what
@@ -400,7 +400,23 @@ export default function RestaurantDashboard() {
                   <div style={styles.listingHeader}>
                     <div>
                       <p style={styles.listingId}>Listing #{listing.id}</p>
-                      <h3 style={styles.listingTitle}>{listing.title}</h3>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                        <h3 style={{ ...styles.listingTitle, marginBottom: 0 }}>{listing.title}</h3>
+                        {listing.is_urgent && (
+                          <span style={{
+                            padding: '4px 10px',
+                            borderRadius: '999px',
+                            background: 'rgba(249,115,22,0.16)',
+                            color: '#f97316',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            border: '1px solid rgba(249,115,22,0.3)',
+                            flexShrink: 0,
+                          }}>
+                            ⚡ Urgent
+                          </span>
+                        )}
+                      </div>
                       <p style={styles.listingDescription}>{listing.description}</p>
                     </div>
                     <span style={styles.statusPill}>{listing.status}</span>
