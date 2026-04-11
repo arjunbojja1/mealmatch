@@ -30,7 +30,7 @@ export default function RestaurantDashboard() {
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  const restaurantId = 101;
+  const restaurantId = "rest-101";
 
   useEffect(() => {
     fetchListings();
