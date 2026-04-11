@@ -39,6 +39,7 @@ export default function RestaurantDashboard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [customDietaryTag, setCustomDietaryTag] = useState("");
 
   const { user } = useAuth();
   const restaurantId = user?.id || "rest-001";
@@ -122,6 +123,29 @@ export default function RestaurantDashboard() {
     });
   }
 
+  function handleRemoveTag(tagToRemove) {
+    setFormData((prev) => ({
+      ...prev,
+      dietary_tags: prev.dietary_tags.filter((tag) => tag !== tagToRemove),
+    }));
+  }
+
+  function handleAddCustomTag() {
+    const normalizedTag = normalizeDietaryTag(customDietaryTag);
+
+    if (!normalizedTag) {
+      return;
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      dietary_tags: prev.dietary_tags.includes(normalizedTag)
+        ? prev.dietary_tags
+        : [...prev.dietary_tags, normalizedTag],
+    }));
+    setCustomDietaryTag("");
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
@@ -177,6 +201,7 @@ export default function RestaurantDashboard() {
         lng: null,
         pickup_slots: [],
       });
+      setCustomDietaryTag("");
 
       await fetchListings(); // rebuilds all tab arrays from backend
       setSuccessMessage("Listing created successfully.");
@@ -385,6 +410,45 @@ export default function RestaurantDashboard() {
                   );
                 })}
               </div>
+              <div style={styles.customTagRow}>
+                <input
+                  type="text"
+                  placeholder="Add custom dietary tag"
+                  value={customDietaryTag}
+                  onChange={(e) => setCustomDietaryTag(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddCustomTag();
+                    }
+                  }}
+                  style={{ ...styles.input, flex: 1 }}
+                />
+                <button
+                  type="button"
+                  onClick={handleAddCustomTag}
+                  style={styles.addCustomTagButton}
+                >
+                  Add Tag
+                </button>
+              </div>
+              {formData.dietary_tags.length > 0 ? (
+                <div style={styles.selectedTagsRow}>
+                  {formData.dietary_tags.map((tag) => (
+                    <span key={tag} style={styles.selectedTagChip}>
+                      {formatTag(tag)}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTag(tag)}
+                        style={styles.selectedTagRemoveButton}
+                        aria-label={`Remove ${formatTag(tag)} tag`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
 
             <div style={styles.fieldGroup}>
@@ -626,9 +690,13 @@ export default function RestaurantDashboard() {
 
 function formatTag(tag) {
   return tag
-    .split("_")
+    .split(/[_-]/)
     .map((word) => word[0].toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+function normalizeDietaryTag(tag) {
+  return tag.trim().toLowerCase().replace(/\s+/g, "_");
 }
 
 function formatDate(dateString) {
@@ -835,6 +903,49 @@ const styles = {
     color: "white",
     border: "1px solid rgba(249,115,22,0.6)",
     boxShadow: "0 4px 12px rgba(249,115,22,0.25)",
+  },
+  customTagRow: {
+    display: "flex",
+    gap: "10px",
+    alignItems: "stretch",
+    flexWrap: "wrap",
+  },
+  addCustomTagButton: {
+    padding: "0 16px",
+    borderRadius: "16px",
+    border: "1px solid rgba(96,165,250,0.28)",
+    background: "rgba(59,130,246,0.12)",
+    color: "#bfdbfe",
+    cursor: "pointer",
+    fontWeight: 700,
+    fontSize: "14px",
+    minHeight: "48px",
+  },
+  selectedTagsRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "10px",
+  },
+  selectedTagChip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "8px 12px",
+    borderRadius: "999px",
+    background: "rgba(249,115,22,0.12)",
+    border: "1px solid rgba(249,115,22,0.22)",
+    color: "#fdba74",
+    fontWeight: 600,
+    fontSize: "13px",
+  },
+  selectedTagRemoveButton: {
+    border: "none",
+    background: "transparent",
+    color: "inherit",
+    cursor: "pointer",
+    fontSize: "16px",
+    lineHeight: 1,
+    padding: 0,
   },
   errorBox: {
     background: "rgba(127,29,29,0.32)",
