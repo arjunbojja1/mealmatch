@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getAdminListings, updateListingStatus, deleteListing } from "./api/client";
+import {
+  deleteListing,
+  getAdminListings,
+  getAdminStats,
+  updateListingStatus,
+} from "./api/client";
 
 function formatDateTime(dateString) {
   if (!dateString) return "N/A";
@@ -21,7 +26,10 @@ function Toast({ toasts }) {
       {toasts.map((t) => (
         <div
           key={t.id}
-          style={{ ...styles.toast, ...(t.type === "success" ? styles.toastSuccess : styles.toastError) }}
+          style={{
+            ...styles.toast,
+            ...(t.type === "success" ? styles.toastSuccess : styles.toastError),
+          }}
         >
           {t.message}
         </div>
@@ -30,39 +38,81 @@ function Toast({ toasts }) {
   );
 }
 
+function ActivityBar({ label, value, total, color, helper }) {
+  const width = total > 0 ? `${Math.max((value / total) * 100, value > 0 ? 8 : 0)}%` : "0%";
+
+  return (
+    <div style={styles.activityMetric}>
+      <div style={styles.activityMetricHeader}>
+        <span style={styles.activityMetricLabel}>{label}</span>
+        <span style={styles.activityMetricValue}>{value}</span>
+      </div>
+      <div style={styles.activityTrack}>
+        <div style={{ ...styles.activityFill, width, background: color }} />
+      </div>
+      <div style={styles.activityHelper}>{helper}</div>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const [listings, setListings] = useState([]);
+  const [stats, setStats] = useState({
+    active_listings: 0,
+    claimed_listings: 0,
+    expired_listings: 0,
+    total_claims: 0,
+    meals_saved: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState(null);
   const [toasts, setToasts] = useState([]);
   const [selectedTab, setSelectedTab] = useState("active");
 
   const addToast = useCallback((message, type = "success") => {
-    const id = Date.now();
+    const id = Date.now() + Math.random();
     setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
   }, []);
 
-  const fetchListings = useCallback(async () => {
+  const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await getAdminListings();
-      setListings(Array.isArray(data) ? data : []);
+      const [listingsData, statsData] = await Promise.all([
+        getAdminListings(),
+        getAdminStats(),
+      ]);
+      setListings(Array.isArray(listingsData) ? listingsData : []);
+      setStats(
+        statsData && typeof statsData === "object"
+          ? statsData
+          : {
+              active_listings: 0,
+              claimed_listings: 0,
+              expired_listings: 0,
+              total_claims: 0,
+              meals_saved: 0,
+            }
+      );
     } catch (err) {
-      addToast(err.message || "Could not load listings from server.", "error");
+      addToast(err.message || "Could not load admin dashboard data.", "error");
     } finally {
       setLoading(false);
     }
   }, [addToast]);
 
-  useEffect(() => { fetchListings(); }, [fetchListings]);
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   async function handleStatusUpdate(listingId, newStatus) {
     setActionId(listingId);
     try {
       await updateListingStatus(listingId, newStatus);
       addToast(`Listing marked as ${newStatus}.`, "success");
-      await fetchListings();
+      await fetchDashboardData();
     } catch (err) {
       addToast(err.message || "Failed to update listing status.", "error");
     } finally {
@@ -75,7 +125,7 @@ export default function AdminDashboard() {
     try {
       await deleteListing(listingId);
       addToast(`"${title}" removed.`, "success");
-      await fetchListings();
+      await fetchDashboardData();
     } catch (err) {
       addToast(err.message || "Failed to delete listing.", "error");
     } finally {
@@ -83,10 +133,18 @@ export default function AdminDashboard() {
     }
   }
 
-  const active = useMemo(() => listings.filter((l) => l.status === "active"), [listings]);
-  const claimed = useMemo(() => listings.filter((l) => l.status === "claimed"), [listings]);
-  const expired = useMemo(() => listings.filter((l) => l.status === "expired"), [listings]);
-  const mealsSaved = useMemo(() => claimed.reduce((s, l) => s + (Number(l.quantity) || 0), 0), [claimed]);
+  const active = useMemo(
+    () => listings.filter((listing) => listing.status === "active"),
+    [listings]
+  );
+  const claimed = useMemo(
+    () => listings.filter((listing) => listing.status === "claimed"),
+    [listings]
+  );
+  const expired = useMemo(
+    () => listings.filter((listing) => listing.status === "expired"),
+    [listings]
+  );
 
   const tabs = [
     { key: "active", label: "Active", count: active.length, data: active },
@@ -94,71 +152,262 @@ export default function AdminDashboard() {
     { key: "expired", label: "Expired", count: expired.length, data: expired },
   ];
 
-  const currentListings = tabs.find((t) => t.key === selectedTab)?.data ?? [];
+  const currentListings = tabs.find((tab) => tab.key === selectedTab)?.data ?? [];
+
+  const totalTrackedListings =
+    Number(stats.active_listings || 0) +
+    Number(stats.claimed_listings || 0) +
+    Number(stats.expired_listings || 0);
+
+  const restaurants = useMemo(() => {
+    const map = new Map();
+
+    listings.forEach((listing) => {
+      const existing = map.get(listing.restaurant_id) || {
+        restaurantId: listing.restaurant_id,
+        total: 0,
+        active: 0,
+        claimed: 0,
+        expired: 0,
+      };
+
+      existing.total += 1;
+      existing[listing.status] += 1;
+      map.set(listing.restaurant_id, existing);
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      if (b.total !== a.total) return b.total - a.total;
+      return a.restaurantId.localeCompare(b.restaurantId);
+    });
+  }, [listings]);
+
+  const recentActivity = useMemo(() => {
+    return [...listings]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 6)
+      .map((listing) => ({
+        id: listing.id,
+        title: listing.title,
+        status: listing.status,
+        restaurantId: listing.restaurant_id,
+        createdAt: listing.created_at,
+      }));
+  }, [listings]);
 
   const statusColors = {
-    active: { bg: "rgba(34,197,94,0.12)", color: "#86efac", border: "rgba(34,197,94,0.25)" },
-    claimed: { bg: "rgba(34,197,94,0.12)", color: "#86efac", border: "rgba(34,197,94,0.25)" },
-    expired: { bg: "rgba(148,163,184,0.1)", color: "#94a3b8", border: "rgba(148,163,184,0.2)" },
+    active: {
+      bg: "rgba(34,197,94,0.12)",
+      color: "#86efac",
+      border: "rgba(34,197,94,0.25)",
+    },
+    claimed: {
+      bg: "rgba(249,115,22,0.12)",
+      color: "#fdba74",
+      border: "rgba(249,115,22,0.3)",
+    },
+    expired: {
+      bg: "rgba(148,163,184,0.1)",
+      color: "#94a3b8",
+      border: "rgba(148,163,184,0.2)",
+    },
   };
+
+  const statCards = [
+    {
+      label: "Active Listings",
+      value: stats.active_listings,
+      accent: "#22c55e",
+      caption: "Live supply currently visible to recipients",
+    },
+    {
+      label: "Claimed Listings",
+      value: stats.claimed_listings,
+      accent: "#f97316",
+      caption: "Listings fully claimed across the platform",
+    },
+    {
+      label: "Expired Listings",
+      value: stats.expired_listings,
+      accent: "#94a3b8",
+      caption: "Listings that aged out of their pickup window",
+    },
+    {
+      label: "Total Claims",
+      value: stats.total_claims,
+      accent: "#38bdf8",
+      caption: "Successful claim records confirmed by the backend",
+    },
+    {
+      label: "Meals Saved",
+      value: stats.meals_saved,
+      accent: "#facc15",
+      caption: "Backend aggregate from the admin stats endpoint",
+    },
+  ];
 
   return (
     <div style={styles.shell}>
       <Toast toasts={toasts} />
 
-      {/* Hero */}
       <section style={styles.hero}>
         <div>
           <div style={styles.eyebrow}>MealMatch • Admin Console</div>
           <h1 style={styles.heroTitle}>Admin Dashboard</h1>
           <p style={styles.heroSubtitle}>
-            Monitor all listings, update statuses, and track platform activity across every restaurant.
+            Monitor listings across every restaurant, drive moderation actions,
+            and follow the system-wide activity pulse from backend-backed stats.
           </p>
         </div>
-        <button onClick={fetchListings} style={styles.refreshBtn} disabled={loading}>
+        <button
+          onClick={fetchDashboardData}
+          style={styles.refreshBtn}
+          disabled={loading}
+        >
           {loading ? "Refreshing..." : "↻ Refresh"}
         </button>
       </section>
 
-      {/* Stats */}
       <div style={styles.statsRow}>
-        {[
-          { label: "Active Listings", value: active.length, accent: "#22c55e" },
-          { label: "Claimed Listings", value: claimed.length, accent: "#f97316" },
-          { label: "Expired Listings", value: expired.length, accent: "#94a3b8" },
-          { label: "Meals Saved", value: mealsSaved, accent: "#f97316" },
-        ].map((s) => (
-          <div key={s.label} style={styles.statCard}>
-            <div style={styles.statLabel}>{s.label}</div>
-            <div style={{ ...styles.statValue, color: s.accent }}>{s.value}</div>
+        {statCards.map((card) => (
+          <div key={card.label} style={styles.statCard}>
+            <div style={styles.statLabel}>{card.label}</div>
+            <div style={{ ...styles.statValue, color: card.accent }}>
+              {card.value}
+            </div>
+            <div style={styles.statCaption}>{card.caption}</div>
           </div>
         ))}
       </div>
 
-      {/* Tabs */}
+      <section style={styles.activitySection}>
+        <div style={styles.activityHeader}>
+          <div>
+            <div style={styles.sectionKicker}>System Activity</div>
+            <h2 style={styles.sectionTitle}>Platform flow and operational pressure</h2>
+            <p style={styles.sectionText}>
+              A dedicated snapshot of listing movement, claim volume, and the
+              most recently created inventory.
+            </p>
+          </div>
+        </div>
+
+        <div style={styles.activityGrid}>
+          <div style={styles.activityPanel}>
+            <div style={styles.panelTitle}>Status Distribution</div>
+            <ActivityBar
+              label="Active"
+              value={Number(stats.active_listings || 0)}
+              total={totalTrackedListings}
+              color="linear-gradient(90deg, #16a34a 0%, #4ade80 100%)"
+              helper="Listings still open for pickup"
+            />
+            <ActivityBar
+              label="Claimed"
+              value={Number(stats.claimed_listings || 0)}
+              total={totalTrackedListings}
+              color="linear-gradient(90deg, #ea580c 0%, #fb923c 100%)"
+              helper="Inventory fully matched with recipients"
+            />
+            <ActivityBar
+              label="Expired"
+              value={Number(stats.expired_listings || 0)}
+              total={totalTrackedListings}
+              color="linear-gradient(90deg, #475569 0%, #94a3b8 100%)"
+              helper="Supply that missed its pickup window"
+            />
+          </div>
+
+          <div style={styles.activityPanel}>
+            <div style={styles.panelTitle}>Recent Listing Activity</div>
+            {recentActivity.length === 0 ? (
+              <div style={styles.panelEmpty}>No listing activity yet.</div>
+            ) : (
+              <div style={styles.timeline}>
+                {recentActivity.map((item) => {
+                  const sc = statusColors[item.status] ?? statusColors.expired;
+                  return (
+                    <div key={item.id} style={styles.timelineItem}>
+                      <div style={styles.timelineRail}>
+                        <div style={styles.timelineDot} />
+                        <div style={styles.timelineLine} />
+                      </div>
+                      <div style={styles.timelineContent}>
+                        <div style={styles.timelineTop}>
+                          <div style={styles.timelineTitle}>{item.title}</div>
+                          <span
+                            style={{
+                              ...styles.statusBadge,
+                              background: sc.bg,
+                              color: sc.color,
+                              border: `1px solid ${sc.border}`,
+                            }}
+                          >
+                            {item.status}
+                          </span>
+                        </div>
+                        <div style={styles.timelineMeta}>
+                          {item.restaurantId} • created {formatDateTime(item.createdAt)}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div style={styles.activityPanel}>
+            <div style={styles.panelTitle}>Restaurant Load</div>
+            {restaurants.length === 0 ? (
+              <div style={styles.panelEmpty}>No restaurant data available.</div>
+            ) : (
+              <div style={styles.restaurantList}>
+                {restaurants.slice(0, 5).map((restaurant) => (
+                  <div key={restaurant.restaurantId} style={styles.restaurantRow}>
+                    <div>
+                      <div style={styles.restaurantName}>{restaurant.restaurantId}</div>
+                      <div style={styles.restaurantMeta}>
+                        {restaurant.active} active • {restaurant.claimed} claimed •{" "}
+                        {restaurant.expired} expired
+                      </div>
+                    </div>
+                    <div style={styles.restaurantTotal}>{restaurant.total}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
       <div style={styles.tabRow}>
-        {tabs.map((t) => (
+        {tabs.map((tab) => (
           <button
-            key={t.key}
-            onClick={() => setSelectedTab(t.key)}
+            key={tab.key}
+            onClick={() => setSelectedTab(tab.key)}
             style={{
               ...styles.tabBtn,
-              ...(selectedTab === t.key ? styles.tabBtnActive : {}),
+              ...(selectedTab === tab.key ? styles.tabBtnActive : {}),
             }}
           >
-            {t.label}
-            <span style={{ ...styles.tabCount, ...(selectedTab === t.key ? styles.tabCountActive : {}) }}>
-              {t.count}
+            {tab.label}
+            <span
+              style={{
+                ...styles.tabCount,
+                ...(selectedTab === tab.key ? styles.tabCountActive : {}),
+              }}
+            >
+              {tab.count}
             </span>
           </button>
         ))}
       </div>
 
-      {/* Listing cards */}
       {loading ? (
         <div style={styles.cardGrid}>
-          {[1, 2, 3].map((i) => (
-            <div key={i} style={styles.skeletonCard}>
+          {[1, 2, 3].map((item) => (
+            <div key={item} style={styles.skeletonCard}>
               <div style={{ ...styles.skeletonBar, width: "55%" }} />
               <div style={{ ...styles.skeletonBar, width: "85%" }} />
               <div style={{ ...styles.skeletonBar, width: "40%" }} />
@@ -176,9 +425,9 @@ export default function AdminDashboard() {
           {currentListings.map((listing) => {
             const sc = statusColors[listing.status] ?? statusColors.expired;
             const isActing = actionId === listing.id;
+
             return (
               <div key={listing.id} style={styles.card}>
-                {/* Card header */}
                 <div style={styles.cardHeader}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <h3 style={styles.cardTitle}>{listing.title}</h3>
@@ -186,15 +435,20 @@ export default function AdminDashboard() {
                       Restaurant: <span style={styles.metaVal}>{listing.restaurant_id}</span>
                     </div>
                   </div>
-                  <span style={{ ...styles.statusBadge, background: sc.bg, color: sc.color, border: `1px solid ${sc.border}` }}>
+                  <span
+                    style={{
+                      ...styles.statusBadge,
+                      background: sc.bg,
+                      color: sc.color,
+                      border: `1px solid ${sc.border}`,
+                    }}
+                  >
                     {listing.status}
                   </span>
                 </div>
 
-                {/* Description */}
                 <p style={styles.cardDescription}>{listing.description}</p>
 
-                {/* Info grid */}
                 <div style={styles.infoGrid}>
                   <div style={styles.infoBlock}>
                     <div style={styles.infoLabel}>Quantity</div>
@@ -202,46 +456,57 @@ export default function AdminDashboard() {
                   </div>
                   <div style={styles.infoBlock}>
                     <div style={styles.infoLabel}>Pickup Start</div>
-                    <div style={styles.infoValue}>{formatDateTime(listing.pickup_start)}</div>
+                    <div style={styles.infoValue}>
+                      {formatDateTime(listing.pickup_start)}
+                    </div>
                   </div>
                   <div style={styles.infoBlock}>
                     <div style={styles.infoLabel}>Pickup End</div>
-                    <div style={styles.infoValue}>{formatDateTime(listing.pickup_end)}</div>
+                    <div style={styles.infoValue}>
+                      {formatDateTime(listing.pickup_end)}
+                    </div>
                   </div>
                   <div style={styles.infoBlock}>
                     <div style={styles.infoLabel}>Created</div>
-                    <div style={styles.infoValue}>{formatDateTime(listing.created_at)}</div>
+                    <div style={styles.infoValue}>
+                      {formatDateTime(listing.created_at)}
+                    </div>
                   </div>
                 </div>
 
-                {/* Dietary tags */}
                 {listing.dietary_tags?.length > 0 && (
                   <div style={styles.tagRow}>
                     {listing.dietary_tags.map((tag) => (
-                      <span key={tag} style={styles.tag}>{formatTag(tag)}</span>
+                      <span key={tag} style={styles.tag}>
+                        {formatTag(tag)}
+                      </span>
                     ))}
                   </div>
                 )}
 
-                {/* ID */}
                 <div style={styles.idRow}>
                   ID: <span style={styles.idVal}>{listing.id}</span>
                 </div>
 
-                {/* Actions */}
                 <div style={styles.actionRow}>
                   {listing.status !== "expired" && (
                     <button
-                      style={{ ...styles.btnAmber, ...(isActing ? styles.btnDisabled : {}) }}
+                      style={{
+                        ...styles.btnAmber,
+                        ...(isActing ? styles.btnDisabled : {}),
+                      }}
                       onClick={() => handleStatusUpdate(listing.id, "expired")}
                       disabled={isActing}
                     >
                       Mark Expired
                     </button>
                   )}
-                  {listing.status !== "active" && listing.status !== "claimed" ? null : listing.status === "active" ? (
+                  {listing.status === "active" ? (
                     <button
-                      style={{ ...styles.btnBlue, ...(isActing ? styles.btnDisabled : {}) }}
+                      style={{
+                        ...styles.btnBlue,
+                        ...(isActing ? styles.btnDisabled : {}),
+                      }}
                       onClick={() => handleStatusUpdate(listing.id, "claimed")}
                       disabled={isActing}
                     >
@@ -249,7 +514,10 @@ export default function AdminDashboard() {
                     </button>
                   ) : null}
                   <button
-                    style={{ ...styles.btnRed, ...(isActing ? styles.btnDisabled : {}) }}
+                    style={{
+                      ...styles.btnRed,
+                      ...(isActing ? styles.btnDisabled : {}),
+                    }}
                     onClick={() => handleDelete(listing.id, listing.title)}
                     disabled={isActing}
                   >
@@ -338,7 +606,7 @@ const styles = {
     fontSize: 15,
     color: "rgba(203,213,225,0.85)",
     lineHeight: 1.65,
-    maxWidth: 580,
+    maxWidth: 620,
   },
   refreshBtn: {
     padding: "12px 20px",
@@ -376,6 +644,191 @@ const styles = {
     fontSize: 32,
     fontWeight: 800,
     lineHeight: 1,
+    marginBottom: 10,
+  },
+  statCaption: {
+    fontSize: 13,
+    color: "rgba(148,163,184,0.74)",
+    lineHeight: 1.5,
+  },
+  activitySection: {
+    marginBottom: 24,
+    background: "rgba(10,16,33,0.82)",
+    border: "1px solid rgba(148,163,184,0.12)",
+    borderRadius: 24,
+    padding: "24px",
+  },
+  activityHeader: {
+    marginBottom: 18,
+  },
+  sectionKicker: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: "rgba(148,163,184,0.7)",
+    textTransform: "uppercase",
+    letterSpacing: "0.1em",
+    marginBottom: 10,
+  },
+  sectionTitle: {
+    fontSize: 24,
+    fontWeight: 800,
+    color: "#f8fafc",
+    margin: "0 0 8px",
+    letterSpacing: "-0.02em",
+  },
+  sectionText: {
+    fontSize: 14,
+    color: "rgba(203,213,225,0.75)",
+    lineHeight: 1.6,
+    maxWidth: 680,
+    margin: 0,
+  },
+  activityGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+    gap: 16,
+  },
+  activityPanel: {
+    background: "rgba(2,6,23,0.62)",
+    border: "1px solid rgba(148,163,184,0.1)",
+    borderRadius: 18,
+    padding: "18px",
+    minHeight: 240,
+  },
+  panelTitle: {
+    fontSize: 14,
+    fontWeight: 800,
+    color: "#e2e8f0",
+    marginBottom: 16,
+    letterSpacing: "0.01em",
+  },
+  panelEmpty: {
+    fontSize: 14,
+    color: "rgba(148,163,184,0.72)",
+  },
+  activityMetric: {
+    marginBottom: 16,
+  },
+  activityMetricHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 8,
+  },
+  activityMetricLabel: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: "#e2e8f0",
+  },
+  activityMetricValue: {
+    fontSize: 14,
+    fontWeight: 800,
+    color: "#f8fafc",
+  },
+  activityTrack: {
+    height: 10,
+    borderRadius: 999,
+    background: "rgba(148,163,184,0.12)",
+    overflow: "hidden",
+    marginBottom: 6,
+  },
+  activityFill: {
+    height: "100%",
+    borderRadius: 999,
+  },
+  activityHelper: {
+    fontSize: 12,
+    color: "rgba(148,163,184,0.72)",
+    lineHeight: 1.45,
+  },
+  timeline: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 14,
+  },
+  timelineItem: {
+    display: "grid",
+    gridTemplateColumns: "18px 1fr",
+    gap: 12,
+  },
+  timelineRail: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+  },
+  timelineDot: {
+    width: 10,
+    height: 10,
+    borderRadius: "50%",
+    background: "#f97316",
+    boxShadow: "0 0 0 4px rgba(249,115,22,0.15)",
+    marginTop: 6,
+    flexShrink: 0,
+  },
+  timelineLine: {
+    width: 1,
+    flex: 1,
+    background: "rgba(148,163,184,0.18)",
+    marginTop: 6,
+  },
+  timelineContent: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+  },
+  timelineTop: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  timelineTitle: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: "#f8fafc",
+  },
+  timelineMeta: {
+    fontSize: 12,
+    color: "rgba(148,163,184,0.74)",
+    lineHeight: 1.5,
+  },
+  restaurantList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  restaurantRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    padding: "12px 14px",
+    borderRadius: 14,
+    background: "rgba(255,255,255,0.03)",
+    border: "1px solid rgba(148,163,184,0.08)",
+  },
+  restaurantName: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: "#f8fafc",
+  },
+  restaurantMeta: {
+    fontSize: 12,
+    color: "rgba(148,163,184,0.72)",
+    marginTop: 4,
+  },
+  restaurantTotal: {
+    minWidth: 42,
+    height: 42,
+    borderRadius: "50%",
+    display: "grid",
+    placeItems: "center",
+    background: "rgba(249,115,22,0.12)",
+    border: "1px solid rgba(249,115,22,0.24)",
+    color: "#fdba74",
+    fontWeight: 800,
+    fontSize: 15,
   },
   tabRow: {
     display: "flex",
@@ -434,9 +887,20 @@ const styles = {
     border: "1px dashed rgba(148,163,184,0.14)",
     borderRadius: 20,
   },
-  emptyIcon: { fontSize: 40, marginBottom: 12 },
-  emptyTitle: { fontSize: 22, fontWeight: 700, color: "#f1f5f9", marginBottom: 8 },
-  emptyText: { fontSize: 14, color: "rgba(148,163,184,0.7)" },
+  emptyIcon: {
+    fontSize: 40,
+    marginBottom: 12,
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: 700,
+    color: "#f1f5f9",
+    marginBottom: 8,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: "rgba(148,163,184,0.7)",
+  },
   cardGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",

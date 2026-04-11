@@ -97,6 +97,10 @@ export function getAdminListings() {
   return request('/api/v1/admin/listings')
 }
 
+export function getAdminStats() {
+  return request('/api/v1/admin/stats')
+}
+
 export function createListing(listing) {
   return post('/api/v1/listings', listing)
 }
