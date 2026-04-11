@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { getApiBaseUrl, getHealth } from './api/client'
-import RecipientFeed from './RecipientFeed'
 import RestaurantDashboard from './RestaurantDashboard'
 import './App.css'
 import RecipientFeed from "./components/RecipientFeed";
