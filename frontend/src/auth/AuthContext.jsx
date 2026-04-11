@@ -1,7 +1,6 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { loginUser, signupUser } from '../api/client'
-
-const AuthContext = createContext(null)
+import { AuthContext } from './context'
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem('mm_token'))
@@ -56,10 +55,4 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   )
-}
-
-export function useAuth() {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider')
-  return ctx
 }

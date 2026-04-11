@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 
 const ROLE_HOME = { recipient: '/browse', restaurant: '/restaurant', admin: '/admin', partner: '/browse' }
 

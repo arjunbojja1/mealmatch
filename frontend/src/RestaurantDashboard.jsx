@@ -4,7 +4,7 @@ import {
   createListing,
   updateListingStatus,
 } from "./api/client";
-import { useAuth } from "./auth/AuthContext";
+import { useAuth } from "./auth/useAuth";
 
 const dietaryOptions = [
   "vegetarian",
