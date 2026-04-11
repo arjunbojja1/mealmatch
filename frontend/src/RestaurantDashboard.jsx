@@ -26,7 +26,10 @@ export default function RestaurantDashboard() {
   const [listings, setListings] = useState([]);
   const [selectedTab, setSelectedTab] = useState("active");
 
+  // isLoading: true only on initial mount (shows skeletons)
+  // isFetching: true on every fetch including post-mutation (shows refresh indicator only)
   const [isLoading, setIsLoading] = useState(true);
+  const [isFetching, setIsFetching] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -34,25 +37,25 @@ export default function RestaurantDashboard() {
   const restaurantId = "rest-001";
 
   useEffect(() => {
-    fetchListings();
-  }, []);
+    fetchListings({ initial: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function fetchListings() {
+  async function fetchListings({ initial = false } = {}) {
+    if (initial) setIsLoading(true);
+    setIsFetching(true);
+    setError("");
     try {
-      setIsLoading(true);
-      setError("");
-
       const data = await getAdminListings();
-
+      // Single canonical source: all tabs are derived from this array
       const restaurantListings = Array.isArray(data)
-        ? data.filter((listing) => listing.restaurant_id === restaurantId)
+        ? data.filter((l) => l.restaurant_id === restaurantId)
         : [];
-
       setListings(restaurantListings);
     } catch (err) {
       setError(err.message || "Something went wrong while loading listings.");
     } finally {
-      setIsLoading(false);
+      if (initial) setIsLoading(false);
+      setIsFetching(false);
     }
   }
 
@@ -118,7 +121,7 @@ export default function RestaurantDashboard() {
         pickup_end: "",
       });
 
-      await fetchListings();
+      await fetchListings(); // rebuilds all tab arrays from backend
       setSuccessMessage("Listing created successfully.");
       setSelectedTab("active");
     } catch (err) {
@@ -173,18 +176,21 @@ export default function RestaurantDashboard() {
     );
   }, [listings]);
 
-  const tabCounts = {
-    active: activeListings.length,
-    claimed: claimedListings.length,
-    expired: expiredListings.length,
-  };
+  // Both derived purely from canonical `listings` — no separate persisted state
+  const tabCounts = useMemo(
+    () => ({
+      active: activeListings.length,
+      claimed: claimedListings.length,
+      expired: expiredListings.length,
+    }),
+    [activeListings, claimedListings, expiredListings]
+  );
 
-  const displayedListings =
-    selectedTab === "active"
-      ? activeListings
-      : selectedTab === "claimed"
-      ? claimedListings
-      : expiredListings;
+  const displayedListings = useMemo(() => {
+    if (selectedTab === "claimed") return claimedListings;
+    if (selectedTab === "expired") return expiredListings;
+    return activeListings;
+  }, [selectedTab, activeListings, claimedListings, expiredListings]);
 
   return (
     <div style={styles.page}>
@@ -329,13 +335,24 @@ export default function RestaurantDashboard() {
         </div>
 
         <div style={styles.listingsCard}>
-          <div style={styles.sectionHeader}>
-            <p style={styles.sectionKicker}>Listing Management</p>
-            <h2 style={styles.sectionTitle}>Manage Listings</h2>
-            <p style={styles.sectionText}>
-              View active, claimed, and expired listings and keep them synced
-              with backend data.
-            </p>
+          <div style={{ ...styles.sectionHeader, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+            <div>
+              <p style={styles.sectionKicker}>Listing Management</p>
+              <h2 style={styles.sectionTitle}>Manage Listings</h2>
+              <p style={styles.sectionText}>
+                View active, claimed, and expired listings synced from backend.
+              </p>
+            </div>
+            <button
+              onClick={() => fetchListings()}
+              disabled={isFetching}
+              style={{
+                ...styles.refreshButton,
+                ...(isFetching ? styles.refreshButtonDisabled : {}),
+              }}
+            >
+              {isFetching ? "Refreshing..." : "Refresh"}
+            </button>
           </div>
 
           <div style={styles.tabs}>
@@ -370,6 +387,11 @@ export default function RestaurantDashboard() {
 
           {isLoading ? (
             <div style={styles.emptyState}>Loading listings...</div>
+          ) : error ? (
+            <div style={styles.emptyState}>
+              <h3 style={styles.emptyTitle}>Failed to load listings</h3>
+              <p style={styles.emptyText}>{error}</p>
+            </div>
           ) : displayedListings.length === 0 ? (
             <div style={styles.emptyState}>
               <h3 style={styles.emptyTitle}>No {selectedTab} listings</h3>
@@ -841,6 +863,22 @@ const styles = {
     fontSize: "13px",
     fontWeight: 600,
     border: "1px solid rgba(148,163,184,0.14)",
+  },
+  refreshButton: {
+    padding: "9px 16px",
+    borderRadius: "12px",
+    border: "1px solid rgba(249,115,22,0.28)",
+    background: "rgba(249,115,22,0.08)",
+    color: "#fb923c",
+    cursor: "pointer",
+    fontWeight: 700,
+    fontSize: "13px",
+    flexShrink: 0,
+    whiteSpace: "nowrap",
+  },
+  refreshButtonDisabled: {
+    opacity: 0.5,
+    cursor: "not-allowed",
   },
   cardActions: {
     marginTop: "16px",

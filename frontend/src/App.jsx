@@ -7,7 +7,14 @@ import './App.css'
 
 function App() {
   const [backendHealthy, setBackendHealthy] = useState(null)
-  const [activeTab, setActiveTab] = useState('browse')
+  const [activeTab, setActiveTab] = useState(
+    () => localStorage.getItem('mealmatch_active_tab') || 'browse'
+  )
+
+  function handleTabChange(tab) {
+    setActiveTab(tab)
+    localStorage.setItem('mealmatch_active_tab', tab)
+  }
 
   useEffect(() => {
     getHealth()
@@ -35,7 +42,7 @@ function App() {
             ].map(({ key, label }) => (
               <button
                 key={key}
-                onClick={() => setActiveTab(key)}
+                onClick={() => handleTabChange(key)}
                 style={{
                   ...styles.tabBtn,
                   ...(activeTab === key ? styles.tabBtnActive : {}),
