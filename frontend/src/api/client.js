@@ -1,16 +1,30 @@
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 
-// ─── Core helpers ────────────────────────────────────────────────────────────
+// ─── Token access ─────────────────────────────────────────────────────────────
+
+function getToken() {
+  return localStorage.getItem('mm_token')
+}
+
+// ─── Core helpers ─────────────────────────────────────────────────────────────
 
 /**
  * Parse the unified API envelope:
  *   success → { ok: true,  data: <payload> }
  *   error   → { ok: false, error: { code, message, details } }
  *
- * Throws an Error with .code and .details on any failure.
+ * On 401, clears local credentials and fires mm:unauthorized so AuthContext
+ * can react without a circular import.
  */
 async function handleResponse(res) {
+  // Global 401 handler — token expired or revoked
+  if (res.status === 401) {
+    localStorage.removeItem('mm_token')
+    localStorage.removeItem('mm_user')
+    window.dispatchEvent(new CustomEvent('mm:unauthorized'))
+  }
+
   let body
   try {
     body = await res.json()
@@ -36,29 +50,36 @@ async function handleResponse(res) {
   throw err
 }
 
-/** Fallback code derivation when the server didn't send a machine code. */
+/** Fallback code when the server didn't send a machine code. */
 function _fallbackCode(status, message = '') {
+  if (status === 401) return 'UNAUTHORIZED'
+  if (status === 403) return 'FORBIDDEN'
   if (status === 404) return 'NOT_FOUND'
   if (status === 409) {
     const lower = message.toLowerCase()
     if (lower.includes('already claimed')) return 'ALREADY_CLAIMED'
-    if (lower.includes('invalid_status_transition') || lower.includes('cannot transition')) {
-      return 'INVALID_STATUS_TRANSITION'
-    }
+    if (lower.includes('cannot transition')) return 'INVALID_STATUS_TRANSITION'
     return 'UNAVAILABLE'
   }
   if (status === 422) return 'OVER_QUANTITY'
   return 'UNKNOWN'
 }
 
+function _authHeaders() {
+  const token = getToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 function request(path) {
-  return fetch(`${API_BASE_URL}${path}`).then(handleResponse)
+  return fetch(`${API_BASE_URL}${path}`, {
+    headers: _authHeaders(),
+  }).then(handleResponse)
 }
 
 function post(path, body) {
   return fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ..._authHeaders() },
     body: JSON.stringify(body),
   }).then(handleResponse)
 }
@@ -66,7 +87,7 @@ function post(path, body) {
 function patch(path, body) {
   return fetch(`${API_BASE_URL}${path}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ..._authHeaders() },
     body: JSON.stringify(body),
   }).then(handleResponse)
 }
@@ -74,10 +95,34 @@ function patch(path, body) {
 function del(path) {
   return fetch(`${API_BASE_URL}${path}`, {
     method: 'DELETE',
+    headers: _authHeaders(),
   }).then(handleResponse)
 }
 
-// ─── Exports ─────────────────────────────────────────────────────────────────
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+export function loginUser(email, password) {
+  // Auth endpoints don't need a token — use plain fetch
+  return fetch(`${API_BASE_URL}/api/v1/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  }).then(handleResponse)
+}
+
+export function signupUser(name, email, password, role) {
+  return fetch(`${API_BASE_URL}/api/v1/auth/signup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, email, password, role }),
+  }).then(handleResponse)
+}
+
+export function getMe() {
+  return request('/api/v1/auth/me')
+}
+
+// ─── App endpoints ────────────────────────────────────────────────────────────
 
 export function getApiBaseUrl() {
   return API_BASE_URL

@@ -4,6 +4,7 @@ import {
   createListing,
   updateListingStatus,
 } from "./api/client";
+import { useAuth } from "./auth/AuthContext";
 
 const dietaryOptions = [
   "vegetarian",
@@ -34,7 +35,8 @@ export default function RestaurantDashboard() {
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  const restaurantId = "rest-001";
+  const { user } = useAuth();
+  const restaurantId = user?.id || "rest-001";
 
   useEffect(() => {
     fetchListings({ initial: true });

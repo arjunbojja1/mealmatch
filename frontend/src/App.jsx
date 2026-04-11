@@ -1,20 +1,53 @@
 import { useEffect, useState } from 'react'
-import { getHealth } from './api/client'
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  Outlet,
+  useNavigate,
+  useLocation,
+} from 'react-router-dom'
+
+import { AuthProvider, useAuth } from './auth/AuthContext'
+import ProtectedRoute from './components/ProtectedRoute'
+import LoginPage from './pages/LoginPage'
+import SignupPage from './pages/SignupPage'
+import UnauthorizedPage from './pages/UnauthorizedPage'
+
 import RecipientFeed from './components/RecipientFeed'
 import RestaurantDashboard from './RestaurantDashboard'
 import AdminDashboard from './AdminDashboard'
+
+import { getHealth } from './api/client'
 import './App.css'
 
-function App() {
-  const [backendHealthy, setBackendHealthy] = useState(null)
-  const [activeTab, setActiveTab] = useState(
-    () => localStorage.getItem('mealmatch_active_tab') || 'browse'
-  )
+// ---------------------------------------------------------------------------
+// Role → default landing page
+// ---------------------------------------------------------------------------
+const ROLE_HOME = {
+  recipient: '/browse',
+  restaurant: '/restaurant',
+  admin: '/admin',
+  partner: '/browse',
+}
 
-  function handleTabChange(tab) {
-    setActiveTab(tab)
-    localStorage.setItem('mealmatch_active_tab', tab)
-  }
+// ---------------------------------------------------------------------------
+// Root redirect  (/ → role-based landing)
+// ---------------------------------------------------------------------------
+function RoleRedirect() {
+  const { user } = useAuth()
+  return <Navigate to={ROLE_HOME[user?.role] || '/browse'} replace />
+}
+
+// ---------------------------------------------------------------------------
+// Authenticated app shell (header + outlet)
+// ---------------------------------------------------------------------------
+function AppShell() {
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [backendHealthy, setBackendHealthy] = useState(null)
 
   useEffect(() => {
     getHealth()
@@ -22,10 +55,20 @@ function App() {
       .catch(() => setBackendHealthy(false))
   }, [])
 
+  // Build tab list based on role
+  const allTabs = [
+    { key: 'browse',     label: 'Browse Food',       path: '/browse',     roles: ['recipient', 'admin'] },
+    { key: 'restaurant', label: 'Restaurant Portal',  path: '/restaurant', roles: ['restaurant', 'admin'] },
+    { key: 'admin',      label: 'Admin',              path: '/admin',      roles: ['admin'] },
+  ]
+  const visibleTabs = allTabs.filter(t => t.roles.includes(user?.role))
+  const activeKey = visibleTabs.find(t => location.pathname.startsWith(t.path))?.key
+
   return (
     <div style={styles.appShell}>
       <header style={styles.header}>
         <div style={styles.headerInner}>
+          {/* Brand */}
           <div style={styles.brand}>
             <img src="/MealMatch Logo.png" alt="MealMatch" style={styles.logo} />
             <div>
@@ -34,18 +77,15 @@ function App() {
             </div>
           </div>
 
+          {/* Tab nav */}
           <nav style={styles.tabNav}>
-            {[
-              { key: 'browse', label: 'Browse Food' },
-              { key: 'restaurant', label: 'Restaurant Portal' },
-              { key: 'admin', label: 'Admin' },
-            ].map(({ key, label }) => (
+            {visibleTabs.map(({ key, label, path }) => (
               <button
                 key={key}
-                onClick={() => handleTabChange(key)}
+                onClick={() => navigate(path)}
                 style={{
                   ...styles.tabBtn,
-                  ...(activeTab === key ? styles.tabBtnActive : {}),
+                  ...(activeKey === key ? styles.tabBtnActive : {}),
                 }}
               >
                 {label}
@@ -53,45 +93,113 @@ function App() {
             ))}
           </nav>
 
-          <div style={styles.statusPill}>
-            <span
-              style={{
+          {/* Right section: user pill + status */}
+          <div style={styles.rightSection}>
+            <div style={styles.userPill}>
+              <span style={{ ...styles.roleDot, background: roleColor(user?.role) }} />
+              <span style={styles.userName}>{user?.name || 'User'}</span>
+              <span style={styles.roleTag}>{user?.role}</span>
+              <button
+                onClick={() => { logout(); navigate('/login', { replace: true }) }}
+                style={styles.logoutBtn}
+              >
+                Sign out
+              </button>
+            </div>
+
+            <div style={styles.statusPill}>
+              <span style={{
                 ...styles.statusDot,
-                background:
-                  backendHealthy === null
-                    ? '#94a3b8'
-                    : backendHealthy
-                    ? '#22c55e'
-                    : '#ef4444',
-              }}
-            />
-            <span style={styles.statusText}>
-              {backendHealthy === null
-                ? 'Checking...'
-                : backendHealthy
-                ? 'Live'
-                : 'Offline'}
-            </span>
+                background: backendHealthy === null ? '#94a3b8' : backendHealthy ? '#22c55e' : '#ef4444',
+              }} />
+              <span style={styles.statusText}>
+                {backendHealthy === null ? 'Checking…' : backendHealthy ? 'Live' : 'Offline'}
+              </span>
+            </div>
           </div>
         </div>
       </header>
 
       <main style={styles.main}>
-        {activeTab === 'browse' && <RecipientFeed />}
-        {activeTab === 'restaurant' && <RestaurantDashboard />}
-        {activeTab === 'admin' && <AdminDashboard />}
+        <Outlet />
       </main>
     </div>
   )
 }
 
+function roleColor(role) {
+  return { admin: '#f97316', restaurant: '#3b82f6', recipient: '#22c55e', partner: '#a855f7' }[role] || '#94a3b8'
+}
+
+// ---------------------------------------------------------------------------
+// Root
+// ---------------------------------------------------------------------------
+export default function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Public pages */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/unauthorized" element={<UnauthorizedPage />} />
+
+          {/* Authenticated shell */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <AppShell />
+              </ProtectedRoute>
+            }
+          >
+            {/* Index → role-based redirect */}
+            <Route index element={<RoleRedirect />} />
+
+            {/* Browse food: recipient + admin */}
+            <Route
+              path="browse"
+              element={
+                <ProtectedRoute allowedRoles={['recipient', 'admin']}>
+                  <RecipientFeed />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Restaurant portal: restaurant + admin */}
+            <Route
+              path="restaurant"
+              element={
+                <ProtectedRoute allowedRoles={['restaurant', 'admin']}>
+                  <RestaurantDashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Admin dashboard: admin only */}
+            <Route
+              path="admin"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <AdminDashboard />
+                </ProtectedRoute>
+              }
+            />
+          </Route>
+
+          {/* Catch-all */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
 const styles = {
-  appShell: {
-    minHeight: '100svh',
-    display: 'flex',
-    flexDirection: 'column',
-    background: '#020817',
-  },
+  appShell: { minHeight: '100svh', display: 'flex', flexDirection: 'column', background: '#020817' },
   header: {
     position: 'sticky',
     top: 0,
@@ -109,19 +217,10 @@ const styles = {
     height: '100%',
     display: 'flex',
     alignItems: 'center',
-    gap: '24px',
+    gap: '16px',
   },
-  brand: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    flexShrink: 0,
-  },
-  logo: {
-    height: '38px',
-    width: 'auto',
-    borderRadius: '8px',
-  },
+  brand: { display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 },
+  logo: { height: '38px', width: 'auto', borderRadius: '8px' },
   brandName: {
     display: 'block',
     fontSize: '18px',
@@ -130,19 +229,8 @@ const styles = {
     lineHeight: 1.15,
     letterSpacing: '-0.02em',
   },
-  brandTagline: {
-    display: 'block',
-    fontSize: '11px',
-    color: 'rgba(148,163,184,0.7)',
-    fontWeight: 500,
-    letterSpacing: '0.01em',
-  },
-  tabNav: {
-    display: 'flex',
-    gap: '4px',
-    flex: 1,
-    justifyContent: 'center',
-  },
+  brandTagline: { display: 'block', fontSize: '11px', color: 'rgba(148,163,184,0.7)', fontWeight: 500 },
+  tabNav: { display: 'flex', gap: '4px', flex: 1, justifyContent: 'center' },
   tabBtn: {
     padding: '8px 18px',
     borderRadius: '8px',
@@ -155,9 +243,29 @@ const styles = {
     transition: 'background 0.15s, color 0.15s',
     fontFamily: 'inherit',
   },
-  tabBtnActive: {
-    background: 'rgba(249,115,22,0.12)',
-    color: '#f97316',
+  tabBtnActive: { background: 'rgba(249,115,22,0.12)', color: '#f97316' },
+  rightSection: { display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 },
+  userPill: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '7px',
+    padding: '6px 10px',
+    borderRadius: '999px',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(148,163,184,0.14)',
+  },
+  roleDot: { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0 },
+  userName: { fontSize: '13px', fontWeight: 600, color: '#e2e8f0', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  roleTag: { fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' },
+  logoutBtn: {
+    border: 'none',
+    background: 'none',
+    color: 'rgba(148,163,184,0.6)',
+    fontSize: '12px',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    padding: '2px 4px',
+    borderRadius: 4,
   },
   statusPill: {
     display: 'flex',
@@ -169,22 +277,7 @@ const styles = {
     border: '1px solid rgba(148,163,184,0.14)',
     flexShrink: 0,
   },
-  statusDot: {
-    width: '8px',
-    height: '8px',
-    borderRadius: '50%',
-    flexShrink: 0,
-  },
-  statusText: {
-    fontSize: '13px',
-    fontWeight: 700,
-    color: '#cbd5e1',
-  },
-  main: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-  },
+  statusDot: { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0 },
+  statusText: { fontSize: '13px', fontWeight: 700, color: '#cbd5e1' },
+  main: { flex: 1, display: 'flex', flexDirection: 'column' },
 }
-
-export default App

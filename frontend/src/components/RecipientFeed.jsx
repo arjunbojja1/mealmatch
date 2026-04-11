@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { getListings, claimListing as apiClaimListing } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 
 const defaultCenter = [38.9869, -76.9426];
 
@@ -28,7 +29,8 @@ export default function RecipientFeed() {
   const [notification, setNotification] = useState(null);
   const [claimCounts, setClaimCounts] = useState({});
 
-  const userId = "user-demo";
+  const { user } = useAuth();
+  const userId = user?.id || "user-demo";
 
   const fetchListings = async () => {
     try {
