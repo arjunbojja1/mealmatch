@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getAdminListings, updateListingStatus, deleteListing } from "./api/client";
 
 function formatDateTime(dateString) {
@@ -37,13 +37,13 @@ export default function AdminDashboard() {
   const [toasts, setToasts] = useState([]);
   const [selectedTab, setSelectedTab] = useState("active");
 
-  function addToast(message, type = "success") {
+  const addToast = useCallback((message, type = "success") => {
     const id = Date.now();
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
-  }
+  }, []);
 
-  async function fetchListings() {
+  const fetchListings = useCallback(async () => {
     try {
       setLoading(true);
       const data = await getAdminListings();
@@ -53,9 +53,9 @@ export default function AdminDashboard() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [addToast]);
 
-  useEffect(() => { fetchListings(); }, []);
+  useEffect(() => { fetchListings(); }, [fetchListings]);
 
   async function handleStatusUpdate(listingId, newStatus) {
     setActionId(listingId);
@@ -542,7 +542,6 @@ const styles = {
   btnAmber: {
     padding: "9px 14px",
     borderRadius: 10,
-    border: "none",
     background: "rgba(245,158,11,0.15)",
     color: "#fcd34d",
     fontWeight: 700,
