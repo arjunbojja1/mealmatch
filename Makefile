@@ -15,6 +15,7 @@ help:
 setup: setup-backend setup-frontend
 
 setup-backend:
+    pip install pipenv
 	pipenv install --dev
 
 setup-frontend:
