@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from enum import Enum
 from typing import Literal
 from uuid import uuid4
 
@@ -27,7 +28,12 @@ app.add_middleware(
 # Schemas
 # ---------------------------------------------------------------------------
 
-ListingStatus = Literal["active", "claimed", "expired"]
+class ListingStatus(str, Enum):
+    active = "active"
+    claimed = "claimed"
+    expired = "expired"
+
+
 ClaimStatus = Literal["pending", "confirmed", "cancelled"]
 UserRole = Literal["restaurant", "recipient", "admin", "partner"]
 
@@ -51,6 +57,11 @@ class Listing(BaseModel):
     pickup_end: datetime
     status: ListingStatus
     created_at: datetime
+
+
+class ListingResponse(Listing):
+    """Listing with computed fields added at response time."""
+    is_urgent: bool
 
 
 class Claim(BaseModel):
@@ -99,7 +110,7 @@ listings: dict[str, Listing] = {
         dietary_tags=["gluten", "dairy-free"],
         pickup_start=_now.replace(hour=18, minute=0, second=0, microsecond=0),
         pickup_end=_now.replace(hour=21, minute=0, second=0, microsecond=0),
-        status="active",
+        status=ListingStatus.active,
         created_at=_now,
     ),
     "seed-2": Listing(
@@ -111,7 +122,7 @@ listings: dict[str, Listing] = {
         dietary_tags=["vegetarian-option", "nut-free"],
         pickup_start=_now.replace(hour=15, minute=0, second=0, microsecond=0),
         pickup_end=_now.replace(hour=17, minute=30, second=0, microsecond=0),
-        status="active",
+        status=ListingStatus.active,
         created_at=_now,
     ),
 }
@@ -127,8 +138,15 @@ def _expire_listings() -> None:
     """Mark listings whose pickup window has passed as expired."""
     now = datetime.now(timezone.utc)
     for listing in listings.values():
-        if listing.status == "active" and now > listing.pickup_end:
-            listings[listing.id] = listing.model_copy(update={"status": "expired"})
+        if listing.status == ListingStatus.active and now > listing.pickup_end:
+            listings[listing.id] = listing.model_copy(update={"status": ListingStatus.expired})
+
+
+def _to_response(listing: Listing) -> ListingResponse:
+    """Attach computed fields (is_urgent) to a listing for API responses."""
+    now = datetime.now(timezone.utc)
+    is_urgent = listing.pickup_end - now <= timedelta(minutes=30)
+    return ListingResponse(**listing.model_dump(), is_urgent=is_urgent)
 
 
 # ---------------------------------------------------------------------------
@@ -151,11 +169,15 @@ def root() -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/v1/listings", response_model=list[Listing])
-def get_listings() -> list[Listing]:
-    """Return all active listings (auto-expires stale ones first)."""
+@app.get("/api/v1/listings", response_model=list[ListingResponse])
+def get_listings() -> list[ListingResponse]:
+    """Return active listings sorted by pickup_end (soonest first), with is_urgent flag."""
     _expire_listings()
-    return [l for l in listings.values() if l.status == "active"]
+    active = sorted(
+        (l for l in listings.values() if l.status == ListingStatus.active),
+        key=lambda l: l.pickup_end,
+    )
+    return [_to_response(l) for l in active]
 
 
 @app.post("/api/v1/listings", response_model=Listing, status_code=201)
@@ -173,7 +195,7 @@ def create_listing(payload: ListingCreate) -> Listing:
         dietary_tags=payload.dietary_tags,
         pickup_start=payload.pickup_start,
         pickup_end=payload.pickup_end,
-        status="active",
+        status=ListingStatus.active,
         created_at=datetime.now(timezone.utc),
     )
     listings[listing.id] = listing
@@ -190,10 +212,10 @@ def claim_listing(listing_id: str, payload: ClaimCreate) -> Listing:
     _expire_listings()
     listing = listings[listing_id]  # re-fetch after expiry check
 
-    if listing.status != "active":
+    if listing.status != ListingStatus.active:
         raise HTTPException(
             status_code=409,
-            detail=f"Listing cannot be claimed (status: {listing.status})",
+            detail=f"Listing cannot be claimed — current status: '{listing.status.value}'",
         )
 
     claim = Claim(
@@ -206,7 +228,7 @@ def claim_listing(listing_id: str, payload: ClaimCreate) -> Listing:
     )
     claims[claim.id] = claim
 
-    updated = listing.model_copy(update={"status": "claimed"})
+    updated = listing.model_copy(update={"status": ListingStatus.claimed})
     listings[listing_id] = updated
     return updated
 
@@ -232,3 +254,54 @@ def update_listing_status(listing_id: str, payload: StatusUpdate) -> Listing:
 def get_claims() -> list[Claim]:
     """Return all claims."""
     return list(claims.values())
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoints
+# ---------------------------------------------------------------------------
+
+
+class AdminStats(BaseModel):
+    active_listings: int
+    claimed_listings: int
+    expired_listings: int
+    total_claims: int
+    meals_saved: int
+
+
+@app.get("/api/v1/admin/listings", response_model=list[Listing])
+def admin_get_all_listings() -> list[Listing]:
+    """Return every listing regardless of status (runs expiry check first)."""
+    _expire_listings()
+    return list(listings.values())
+
+
+@app.delete("/api/v1/listings/{listing_id}", response_model=Listing)
+def delete_listing(listing_id: str) -> Listing:
+    """Permanently remove a listing from in-memory storage."""
+    listing = listings.pop(listing_id, None)
+    if not listing:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    return listing
+
+
+@app.get("/api/v1/admin/stats", response_model=AdminStats)
+def admin_get_stats() -> AdminStats:
+    """Aggregate stats across all listings and claims."""
+    _expire_listings()
+
+    status_counts: dict[ListingStatus, int] = {s: 0 for s in ListingStatus}
+    meals_saved = 0
+
+    for listing in listings.values():
+        status_counts[listing.status] += 1
+        if listing.status == ListingStatus.claimed:
+            meals_saved += listing.quantity
+
+    return AdminStats(
+        active_listings=status_counts[ListingStatus.active],
+        claimed_listings=status_counts[ListingStatus.claimed],
+        expired_listings=status_counts[ListingStatus.expired],
+        total_claims=len(claims),
+        meals_saved=meals_saved,
+    )
