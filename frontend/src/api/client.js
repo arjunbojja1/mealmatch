@@ -3,28 +3,52 @@ const API_BASE_URL =
 
 // ─── Core helpers ────────────────────────────────────────────────────────────
 
+/**
+ * Parse the unified API envelope:
+ *   success → { ok: true,  data: <payload> }
+ *   error   → { ok: false, error: { code, message, details } }
+ *
+ * Throws an Error with .code and .details on any failure.
+ */
 async function handleResponse(res) {
-  if (res.ok) return res.json()
-  let message = `Request failed: ${res.status}`
+  let body
   try {
-    const body = await res.json()
-    if (body?.detail) message = body.detail
+    body = await res.json()
   } catch {
-    // ignore parse errors — keep the status-based message
+    const err = new Error(`Request failed: ${res.status}`)
+    err.code = 'UNKNOWN'
+    throw err
   }
 
-  let code = 'UNKNOWN'
-  if (res.status === 404) {
-    code = 'NOT_FOUND'
-  } else if (res.status === 409) {
-    code = message.toLowerCase().includes('already claimed') ? 'ALREADY_CLAIMED' : 'UNAVAILABLE'
-  } else if (res.status === 422) {
-    code = 'OVER_QUANTITY'
+  // Success path — unwrap data from envelope
+  if (res.ok && body?.ok) {
+    return body.data
   }
+
+  // Error path — read structured error from envelope
+  const errObj = body?.error || {}
+  const message = errObj.message || `Request failed: ${res.status}`
+  const code = errObj.code || _fallbackCode(res.status, message)
 
   const err = new Error(message)
   err.code = code
+  err.details = errObj.details ?? null
   throw err
+}
+
+/** Fallback code derivation when the server didn't send a machine code. */
+function _fallbackCode(status, message = '') {
+  if (status === 404) return 'NOT_FOUND'
+  if (status === 409) {
+    const lower = message.toLowerCase()
+    if (lower.includes('already claimed')) return 'ALREADY_CLAIMED'
+    if (lower.includes('invalid_status_transition') || lower.includes('cannot transition')) {
+      return 'INVALID_STATUS_TRANSITION'
+    }
+    return 'UNAVAILABLE'
+  }
+  if (status === 422) return 'OVER_QUANTITY'
+  return 'UNKNOWN'
 }
 
 function request(path) {
