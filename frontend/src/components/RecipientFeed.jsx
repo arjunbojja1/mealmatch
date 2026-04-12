@@ -17,6 +17,15 @@ export default function RecipientFeed() {
   const [pendingNav] = useState(
     routeState?.autoNav ? { navMode: routeState.navMode || "driving" } : null
   );
+  const pendingNavFiredRef = useRef(false);
+  const [mapMounted, setMapMounted] = useState(
+    routeState?.focusListingId ? true : false
+  );
+  // While true, we withhold focusedId from MealMap to prevent popup from flashing
+  // open during the ~300ms window before startNavigation fires.
+  const [navIntentActive, setNavIntentActive] = useState(
+    !!(routeState?.autoNav && routeState?.focusListingId)
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTag, setSelectedTag] = useState("all");
   const [sortBy, setSortBy] = useState("recommended");
@@ -49,15 +58,32 @@ export default function RecipientFeed() {
   }, []);
 
   // Auto-start in-app navigation when arriving from My Claims with autoNav state.
-  // Wait for !isLoading so the MealMap is actually mounted and the ref is populated.
+  // pendingNavFiredRef prevents retrigger on every 15s listing poll.
+  // navIntentActive is cleared AFTER startNavigation resolves so focusedId is never
+  // briefly un-suppressed before MealMap's navTarget guard is in place.
   useEffect(() => {
     if (!pendingNav || !focusedListingId || isLoading || !listings.length) return;
+    if (pendingNavFiredRef.current) return;
     const listing = listings.find((l) => l.id === focusedListingId);
     if (!listing?.location) return;
-    // Small delay to let the map finish its initial render
-    const t = setTimeout(() => {
-      mapRef.current?.startNavigation(listing, pendingNav.navMode);
-    }, 300);
+    pendingNavFiredRef.current = true;
+
+    const t = setTimeout(async () => {
+      // Retry up to 3 × 150ms if mapRef not yet assigned (safety net for slow mounts)
+      let attempts = 0;
+      while (!mapRef.current?.startNavigation && attempts < 3) {
+        await new Promise((r) => setTimeout(r, 150));
+        attempts++;
+      }
+      if (!mapRef.current?.startNavigation) {
+        console.warn("[MealMatch] MAP_NAV_REF_MISSING: mapRef not ready after retries");
+        return;
+      }
+      await mapRef.current.startNavigation(listing, pendingNav.navMode);
+      // Intent consumed — clear AFTER startNavigation resolves so navTarget guard is active
+      setNavIntentActive(false);
+    }, 400);
+
     return () => clearTimeout(t);
   }, [pendingNav, focusedListingId, listings, isLoading]);
 
@@ -168,6 +194,7 @@ export default function RecipientFeed() {
 
   const showOnMap = useCallback((listing) => {
     setFocusedListingId(listing.id);
+    setMapMounted(true);
     setViewMode("map");
   }, []);
 
@@ -340,7 +367,7 @@ export default function RecipientFeed() {
               List
             </button>
             <button
-              onClick={() => setViewMode("map")}
+              onClick={() => { setMapMounted(true); setViewMode("map"); }}
               className={`mm-btn mm-btn-sm${viewMode === "map" ? " mm-btn-primary" : " mm-btn-ghost"}`}
               style={{ minWidth: 60 }}
               aria-pressed={viewMode === "map"}
@@ -379,13 +406,13 @@ export default function RecipientFeed() {
         </div>
       )}
 
-      {/* Map view */}
-      {!isLoading && viewMode === "map" && (
-        <div style={s.mapShell}>
+      {/* Map view — lazy-mount on first open, then keep-alive with display:none */}
+      {mapMounted && (
+        <div style={{ ...s.mapShell, display: viewMode === "map" ? undefined : "none" }}>
           <MealMap
             ref={mapRef}
             listings={filteredListings}
-            focusedId={focusedListingId}
+            focusedId={navIntentActive ? null : focusedListingId}
             onListingClick={(l) => setFocusedListingId(l.id)}
             onClaim={handleClaim}
             claimingIds={claimingIds}
