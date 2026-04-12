@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getListings, bulkClaimListing } from "../api/client";
-import { useAuth } from "../auth/useAuth";
 import { Notification } from "../components/ui/Notification";
 import { EmptyState, LoadingSkeleton } from "../components/ui/EmptyState";
 import { PageLayout, PageHero } from "../components/ui/PageLayout";
@@ -9,9 +8,6 @@ import { formatDietaryTagWithIcon as formatTagWithIcon } from "../utils/dietaryT
 const MAX_BULK = 50;
 
 export default function PartnerPage() {
-  const { user } = useAuth();
-  const userId = user?.id || "partner-001";
-
   const [listings, setListings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
