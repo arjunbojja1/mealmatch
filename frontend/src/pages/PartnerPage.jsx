@@ -73,7 +73,7 @@ export default function PartnerPage() {
     } finally {
       setClaimingIds(prev => { const n = new Set(prev); n.delete(listing.id); return n; });
     }
-  }, [claimingIds, quantities, groupNames, contactInfos, slotSelections, userId, fetchListings, showNotification]);
+  }, [claimingIds, quantities, groupNames, contactInfos, slotSelections, fetchListings, showNotification]);
 
   return (
     <PageLayout>

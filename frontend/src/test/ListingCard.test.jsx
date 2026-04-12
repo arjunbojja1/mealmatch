@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import ListingCard, { getMinutesLeft, formatMinutesLeft } from '../components/ListingCard'
+import ListingCard from '../components/ListingCard'
+import { getMinutesLeft, formatMinutesLeft } from '../utils/listingUtils'
 
 // ── Pure utility tests ────────────────────────────────────────────────────────
 

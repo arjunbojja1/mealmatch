@@ -4,7 +4,8 @@ import { getListings, claimListing as apiClaimListing, getMyClaims } from "../ap
 import { useAuth } from "../auth/useAuth";
 import MealMap from "./MealMap";
 import { Notification } from "./ui/Notification";
-import ListingCard, { getMinutesLeft } from "./ListingCard";
+import ListingCard from "./ListingCard";
+import { getMinutesLeft } from "../utils/listingUtils";
 import { formatDietaryTagWithIcon as formatTagWithIcon } from "../utils/dietaryTags";
 
 
