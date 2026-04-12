@@ -624,19 +624,23 @@ function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart }) {
   }, [mapReady, mapRef, userLoc, logMapError])
 
   // ── Derived values ───────────────────────────────────────────────────────────
-  // distRemaining: live from GPS position relative to upcoming step maneuvers
+  // distRemaining: live from GPS position relative to upcoming step maneuvers.
+  // Fallback for final/unknown step uses haversine to destination so the last-mile
+  // display doesn't over-report (avoids showing full step distance when user is mid-step).
   const distRemaining = useMemo(() => {
     if (!navSteps.length) return 0
     const nextManeuverLoc = navSteps[stepIdx + 1]?.maneuver?.location
     const distToNextTurn =
       Array.isArray(nextManeuverLoc) && nextManeuverLoc.length >= 2 && userLoc
         ? haversine(userLoc.lat, userLoc.lng, nextManeuverLoc[1], nextManeuverLoc[0])
-        : (navSteps[stepIdx]?.distance ?? 0)
+        : navTargetLoc && userLoc
+          ? haversine(userLoc.lat, userLoc.lng, navTargetLoc.lat, navTargetLoc.lng)
+          : (navSteps[stepIdx]?.distance ?? 0)
     return (
       distToNextTurn +
       navSteps.slice(stepIdx + 1).reduce((s, st) => s + (st?.distance ?? 0), 0)
     )
-  }, [navSteps, stepIdx, userLoc])
+  }, [navSteps, stepIdx, userLoc, navTargetLoc])
 
   // etaSecs: speed-based when rollingSpeed is available, proportional OSRM fallback otherwise
   const etaSecs = useMemo(() => {
@@ -672,7 +676,7 @@ function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart }) {
     followUser,
   }
 
-  return { navState, navTargetLoc, startNavigation, clearNav, changeMode, handleRecenter, setFollowUser }
+  return { navState, startNavigation, clearNav, changeMode, handleRecenter, setFollowUser }
 }
 
 const MealMap = forwardRef(function MealMap(
