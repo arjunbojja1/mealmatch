@@ -23,6 +23,7 @@ const NAV_MODES = [
   { key: 'driving',   label: '🚗 Drive' },
   { key: 'walking',   label: '🚶 Walk' },
   { key: 'bicycling', label: '🚴 Bike' },
+  { key: 'transit',   label: '🚌 Transit' },
 ]
 
 export default function MyClaimsPage() {
@@ -60,7 +61,15 @@ export default function MyClaimsPage() {
 
   const handleNavigate = useCallback((listing, mode) => {
     if (!listing) return
-    navigate('/browse', { state: { focusListingId: listing.id, autoNav: true, navMode: mode } })
+    // autoNav / navMode are consumed by RecipientFeed's pendingNav state machine
+    navigate('/browse', {
+      state: {
+        focusListingId: listing.id,
+        autoNav: true,
+        navMode: mode,
+        source: 'my-claims',
+      },
+    })
   }, [navigate])
 
   const handleCancel = async (claim) => {
