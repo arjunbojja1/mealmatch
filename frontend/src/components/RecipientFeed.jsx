@@ -4,6 +4,7 @@ import { getListings, claimListing as apiClaimListing, getMyClaims } from "../ap
 import { useAuth } from "../auth/useAuth";
 import MealMap from "./MealMap";
 import { Notification } from "./ui/Notification";
+import { formatDietaryTagWithIcon as formatTagWithIcon } from "../utils/dietaryTags";
 
 const FOOD_VISUALS = [
   {
@@ -220,7 +221,7 @@ export default function RecipientFeed() {
       label:
         tag === "all"
           ? `All Dietary Tags (${baseFilteredListings.length})`
-          : `${formatTag(tag)} (${counts.get(tag) || 0})`,
+          : `${formatTagWithIcon(tag)} (${counts.get(tag) || 0})`,
     }));
   }, [allTags, baseFilteredListings]);
 
@@ -570,7 +571,7 @@ export default function RecipientFeed() {
                   {(listing.dietary_tags || []).length > 0 ? (
                     listing.dietary_tags.map((tag) => (
                       <span key={tag} className="mm-badge mm-badge-success" style={{ fontSize: 11 }}>
-                        {formatTag(tag)}
+                        {formatTagWithIcon(tag)}
                       </span>
                     ))
                   ) : (
@@ -739,14 +740,6 @@ function formatMinutesLeft(minutes) {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
   return `${hours}h ${mins}m`;
-}
-
-function formatTag(tag) {
-  return String(tag || "")
-    .split(/[_-]/)
-    .filter(Boolean)
-    .map((word) => word[0].toUpperCase() + word.slice(1))
-    .join(" ");
 }
 
 const s = {

@@ -4,6 +4,7 @@ import { useAuth } from "../auth/useAuth";
 import { Notification } from "../components/ui/Notification";
 import { EmptyState, LoadingSkeleton } from "../components/ui/EmptyState";
 import { PageLayout, PageHero } from "../components/ui/PageLayout";
+import { formatDietaryTagWithIcon as formatTagWithIcon } from "../utils/dietaryTags";
 
 const MAX_BULK = 50;
 
@@ -138,7 +139,7 @@ export default function PartnerPage() {
                 {((listing.dietary_tags || []).length > 0 || listing.priority_window_end) && (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {(listing.dietary_tags || []).map(t => (
-                      <span key={t} className="mm-badge mm-badge-info" style={{ fontSize: 11 }}>{t}</span>
+                      <span key={t} className="mm-badge mm-badge-info" style={{ fontSize: 11 }}>{formatTagWithIcon(t)}</span>
                     ))}
                     {listing.priority_window_end && (
                       <span className="mm-badge mm-badge-partner" style={{ fontSize: 11 }}>Priority access</span>

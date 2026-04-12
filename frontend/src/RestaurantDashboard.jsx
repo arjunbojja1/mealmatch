@@ -6,6 +6,10 @@ import {
   getDemandPrediction,
 } from "./api/client";
 import { useAuth } from "./auth/useAuth";
+import {
+  formatDietaryTag as formatTag,
+  formatDietaryTagWithIcon as formatTagWithIcon,
+} from "./utils/dietaryTags";
 
 const dietaryOptions = [
   "vegetarian",
@@ -424,7 +428,7 @@ export default function RestaurantDashboard() {
                       onClick={() => handleTagToggle(tag)}
                       className={`mm-btn mm-btn-sm ${selected ? "mm-btn-primary" : "mm-btn-ghost"}`}
                     >
-                      {formatTag(tag)}
+                      {formatTagWithIcon(tag)}
                     </button>
                   );
                 })}
@@ -456,7 +460,7 @@ export default function RestaurantDashboard() {
                 <div style={s.selectedTagsRow}>
                   {formData.dietary_tags.map((tag) => (
                     <span key={tag} style={s.selectedTagChip}>
-                      {formatTag(tag)}
+                      {formatTagWithIcon(tag)}
                       <button
                         type="button"
                         onClick={() => handleRemoveTag(tag)}
@@ -663,7 +667,7 @@ export default function RestaurantDashboard() {
                     {listing.dietary_tags?.length ? (
                       listing.dietary_tags.map((tag) => (
                         <span key={tag} className="mm-badge mm-badge-info" style={{ fontSize: 11 }}>
-                          {formatTag(tag)}
+                          {formatTagWithIcon(tag)}
                         </span>
                       ))
                     ) : (
@@ -722,13 +726,6 @@ export default function RestaurantDashboard() {
       </div>
     </div>
   );
-}
-
-function formatTag(tag) {
-  return tag
-    .split(/[_-]/)
-    .map((word) => word[0].toUpperCase() + word.slice(1))
-    .join(" ");
 }
 
 function normalizeDietaryTag(tag) {

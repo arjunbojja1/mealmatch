@@ -6,6 +6,7 @@ import {
   getAdminStats,
   updateListingStatus,
 } from "./api/client";
+import { formatDietaryTagWithIcon as formatTagWithIcon } from "./utils/dietaryTags";
 
 function formatDateTime(dateString) {
   if (!dateString) return "N/A";
@@ -15,10 +16,6 @@ function formatDateTime(dateString) {
     hour: "numeric",
     minute: "2-digit",
   });
-}
-
-function formatTag(tag) {
-  return tag.split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
 }
 
 function Toast({ toasts }) {
@@ -512,7 +509,7 @@ export default function AdminDashboard() {
                   <div style={s.tagRow}>
                     {listing.dietary_tags.map((tag) => (
                       <span key={tag} className="mm-badge mm-badge-neutral" style={{ fontSize: 11 }}>
-                        {formatTag(tag)}
+                        {formatTagWithIcon(tag)}
                       </span>
                     ))}
                   </div>
