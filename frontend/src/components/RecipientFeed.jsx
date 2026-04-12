@@ -4,59 +4,8 @@ import { getListings, claimListing as apiClaimListing, getMyClaims } from "../ap
 import { useAuth } from "../auth/useAuth";
 import MealMap from "./MealMap";
 import { Notification } from "./ui/Notification";
-import { formatDietaryTagWithIcon as formatTagWithIcon } from "../utils/dietaryTags";
+import ListingCard, { getMinutesLeft } from "./ListingCard";
 
-const FOOD_VISUALS = [
-  {
-    key: "salad",
-    icon: "🥗",
-    label: "Fresh",
-    colors: ["#DCFCE7", "#86EFAC"],
-    keywords: ["salad", "vegan", "vegetarian", "greens", "produce", "fresh", "plant"],
-  },
-  {
-    key: "bakery",
-    icon: "🥐",
-    label: "Bakery",
-    colors: ["#FEF3C7", "#F59E0B"],
-    keywords: ["bread", "bakery", "pastry", "bagel", "croissant", "muffin"],
-  },
-  {
-    key: "meal",
-    icon: "🍱",
-    label: "Meal",
-    colors: ["#DBEAFE", "#60A5FA"],
-    keywords: ["rice", "bowl", "entree", "lunch", "dinner", "meal", "combo"],
-  },
-  {
-    key: "pizza",
-    icon: "🍕",
-    label: "Hot",
-    colors: ["#FEE2E2", "#F97316"],
-    keywords: ["pizza", "slice", "flatbread"],
-  },
-  {
-    key: "dessert",
-    icon: "🧁",
-    label: "Sweet",
-    colors: ["#FCE7F3", "#F472B6"],
-    keywords: ["dessert", "cake", "cookie", "sweet", "brownie", "donut"],
-  },
-  {
-    key: "soup",
-    icon: "🍜",
-    label: "Warm",
-    colors: ["#EDE9FE", "#8B5CF6"],
-    keywords: ["soup", "ramen", "noodle", "stew", "broth", "pasta"],
-  },
-  {
-    key: "fruit",
-    icon: "🍎",
-    label: "Fruit",
-    colors: ["#FEF9C3", "#FACC15"],
-    keywords: ["fruit", "apple", "banana", "orange", "berry", "snack"],
-  },
-];
 
 export default function RecipientFeed() {
   const { state: routeState } = useLocation();
@@ -516,152 +465,20 @@ export default function RecipientFeed() {
       {/* Listing cards */}
       {!isLoading && viewMode === "list" && filteredListings.length > 0 && (
         <div style={s.cardGrid}>
-          {filteredListings.map((listing) => {
-            const minutesLeft = getMinutesLeft(listing.pickup_end);
-            const isUrgent = minutesLeft > 0 && minutesLeft <= 30;
-            const maxQuantity = Number(listing.quantity || 1);
-            const claimValue = claimCounts[listing.id] || 1;
-            const alreadyClaimed = justClaimedIds.has(listing.id);
-
-            let statusBadge = "mm-badge-success";
-            let statusLabel = "Available";
-            if (alreadyClaimed) { statusBadge = "mm-badge-neutral"; statusLabel = "Claimed"; }
-            else if (isUrgent)  { statusBadge = "mm-badge-warning"; statusLabel = "Urgent"; }
-
-            return (
-              <div key={listing.id} className="mm-card" style={s.listingCard}>
-                {/* Card top */}
-                <div style={s.cardTop}>
-                  <div style={s.cardPrimary}>
-                    <FoodThumbnail listing={listing} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={s.locationPill}>
-                        {listing.location_name || listing.address || "Nearby pickup"}
-                      </div>
-                      <h3 style={s.cardTitle}>{listing.title}</h3>
-                      <p style={s.cardDescription}>
-                        {listing.description || "Freshly posted listing."}
-                      </p>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
-                    <span className={`mm-badge ${statusBadge}`}>{statusLabel}</span>
-                    {listing.match_score != null && listing.match_score >= 55 && (
-                      <span
-                        className="mm-badge mm-badge-partner"
-                        title={(listing.match_reasons || []).join(" · ") || "Match score"}
-                        style={{ fontSize: 11 }}
-                      >
-                        {Math.round(listing.match_score)}% match
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Info grid */}
-                <div style={s.infoGrid}>
-                  <InfoBlock label="Quantity"     value={`${listing.quantity}`} />
-                  <InfoBlock label="Pickup starts" value={formatTime(listing.pickup_start)} />
-                  <InfoBlock label="Pickup ends"   value={formatTime(listing.pickup_end)} />
-                  <InfoBlock label="Time left"     value={formatMinutesLeft(minutesLeft)} />
-                </div>
-
-                {/* Tags */}
-                <div style={s.tagRow}>
-                  {(listing.dietary_tags || []).length > 0 ? (
-                    listing.dietary_tags.map((tag) => (
-                      <span key={tag} className="mm-badge mm-badge-success" style={{ fontSize: 11 }}>
-                        {formatTagWithIcon(tag)}
-                      </span>
-                    ))
-                  ) : (
-                    <span style={{ color: "var(--mm-text-4)", fontSize: 13 }}>No dietary tags</span>
-                  )}
-                </div>
-
-                {/* Address + show on map */}
-                {(listing.address || listing.location?.lat != null) && (
-                  <div style={s.addressRow}>
-                    {listing.address && (
-                      <span style={s.addressText}>{listing.address}</span>
-                    )}
-                    <button
-                      onClick={() => showOnMap(listing)}
-                      className="mm-btn mm-btn-ghost mm-btn-sm"
-                    >
-                      Show on map
-                    </button>
-                  </div>
-                )}
-
-                {/* Urgent banner */}
-                {isUrgent && (
-                  <div className="mm-alert mm-alert-warning" style={{ marginTop: 0 }}>
-                    This listing is about to expire. Claim soon for the best chance of pickup.
-                  </div>
-                )}
-
-                {/* Slot picker */}
-                {(listing.pickup_slots || []).length > 0 && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <label className="mm-label" htmlFor={`slot-${listing.id}`}>Pickup slot</label>
-                    <select
-                      id={`slot-${listing.id}`}
-                      value={slotSelections[listing.id] || ""}
-                      onChange={(e) =>
-                        setSlotSelections((prev) => ({
-                          ...prev,
-                          [listing.id]: e.target.value || null,
-                        }))
-                      }
-                      className="mm-select"
-                      disabled={alreadyClaimed}
-                    >
-                      <option value="">Select a slot…</option>
-                      {listing.pickup_slots.map((slot) => (
-                        <option key={slot.id} value={slot.id}>
-                          {slot.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {/* Claim row */}
-                <div style={s.cardFooter}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <label className="mm-label" htmlFor={`qty-${listing.id}`}>Claim qty</label>
-                    <input
-                      id={`qty-${listing.id}`}
-                      type="number"
-                      min="1"
-                      max={maxQuantity}
-                      value={claimValue}
-                      onChange={(e) =>
-                        handleClaimCountChange(listing.id, e.target.value, maxQuantity)
-                      }
-                      className="mm-input"
-                      style={{ width: 90 }}
-                      disabled={alreadyClaimed}
-                    />
-                  </div>
-
-                  <button
-                    onClick={() => handleClaim(listing)}
-                    disabled={alreadyClaimed || claimingIds.has(listing.id)}
-                    className={`mm-btn ${alreadyClaimed ? "mm-btn-ghost" : "mm-btn-primary"}`}
-                    style={{ minWidth: 160 }}
-                  >
-                    {alreadyClaimed
-                      ? "Claimed"
-                      : claimingIds.has(listing.id)
-                      ? "Claiming…"
-                      : "Reserve pickup"}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+          {filteredListings.map((listing) => (
+            <ListingCard
+              key={listing.id}
+              listing={listing}
+              isClaiming={claimingIds.has(listing.id)}
+              justClaimed={justClaimedIds.has(listing.id)}
+              claimCount={claimCounts[listing.id] || 1}
+              slotSelection={slotSelections[listing.id] || ""}
+              onClaim={() => handleClaim(listing)}
+              onCountChange={(value, max) => handleClaimCountChange(listing.id, value, max)}
+              onSlotChange={(slotId) => setSlotSelections(prev => ({ ...prev, [listing.id]: slotId }))}
+              onShowMap={() => showOnMap(listing)}
+            />
+          ))}
         </div>
       )}
     </div>
@@ -675,71 +492,6 @@ function MiniStat({ label, value }) {
       <div style={s.miniStatLabel}>{label}</div>
     </div>
   );
-}
-
-function FoodThumbnail({ listing }) {
-  const visual = getListingVisual(listing);
-
-  return (
-    <div
-      aria-hidden="true"
-      style={{
-        ...s.thumbnail,
-        background: `linear-gradient(145deg, ${visual.colors[0]} 0%, ${visual.colors[1]} 100%)`,
-      }}
-    >
-      <span style={{ ...s.thumbnailOrb, background: `${visual.colors[0]}CC` }} />
-      <span style={s.thumbnailIcon}>{visual.icon}</span>
-      <span style={s.thumbnailLabel}>{visual.label}</span>
-    </div>
-  );
-}
-
-function getListingVisual(listing) {
-  const searchableText = [
-    listing.title,
-    listing.description,
-    ...(listing.dietary_tags || []),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  return (
-    FOOD_VISUALS.find((visual) =>
-      visual.keywords.some((keyword) => searchableText.includes(keyword))
-    ) || FOOD_VISUALS[2]
-  );
-}
-
-function InfoBlock({ label, value }) {
-  return (
-    <div style={s.infoBlock}>
-      <div style={s.infoLabel}>{label}</div>
-      <div style={s.infoValue}>{value}</div>
-    </div>
-  );
-}
-
-function formatTime(dateString) {
-  if (!dateString) return "N/A";
-  return new Date(dateString).toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function getMinutesLeft(dateString) {
-  if (!dateString) return 0;
-  return Math.floor((new Date(dateString) - new Date()) / 60000);
-}
-
-function formatMinutesLeft(minutes) {
-  if (minutes <= 0) return "Closing";
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return `${hours}h ${mins}m`;
 }
 
 const s = {
