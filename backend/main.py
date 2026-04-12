@@ -736,534 +736,182 @@ class AdminStats(BaseModel):
 
 _claim_lock = threading.Lock()
 
-_now = datetime.now(timezone.utc)
+# ---------------------------------------------------------------------------
+# Listing + claim persistence (SQLite side-channel)
+# ---------------------------------------------------------------------------
+import sqlite3 as _sqlite3
+
+_LISTINGS_DB = os.getenv("LISTINGS_DB_PATH", os.path.join(_BACKEND_DIR, "mealmatch_listings.db"))
+_listings_persist_lock = threading.Lock()
 
 
-def _future(hours: float) -> datetime:
-    return _now + timedelta(hours=hours)
+def _init_listings_db() -> None:
+    with _sqlite3.connect(_LISTINGS_DB) as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS listings (id TEXT PRIMARY KEY, data TEXT NOT NULL)"
+        )
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS claims "
+            "(id TEXT PRIMARY KEY, listing_id TEXT NOT NULL, data TEXT NOT NULL)"
+        )
 
 
-listings: dict[str, Listing] = {
-    "seed-1": Listing(
-        id="seed-1", restaurant_id="rest-001",
-        title="Leftover Pasta Bolognese",
-        description="~20 portions of freshly made pasta bolognese. Pick up before close.",
-        quantity=20, dietary_tags=["gluten", "dairy-free"],
-        pickup_start=_now.replace(hour=18, minute=0, second=0, microsecond=0),
-        pickup_end=_now.replace(hour=21, minute=0, second=0, microsecond=0),
-        status=ListingStatus.active, created_at=_now,
-    ),
-    "seed-2": Listing(
-        id="seed-2", restaurant_id="rest-002",
-        title="Assorted Sandwiches",
-        description="Individually wrapped turkey and veggie sandwiches, about 30 available.",
-        quantity=30, dietary_tags=["vegetarian-option", "nut-free"],
-        pickup_start=_now.replace(hour=15, minute=0, second=0, microsecond=0),
-        pickup_end=_now.replace(hour=17, minute=30, second=0, microsecond=0),
-        status=ListingStatus.active, created_at=_now,
-    ),
-    "seed-3": Listing(
-        id="seed-3", restaurant_id="rest-001",
-        title="Vegan Buddha Bowls",
-        description="Grain bowls with roasted chickpeas, quinoa, and tahini. 12 portions.",
-        quantity=12, dietary_tags=["vegan", "gluten-free", "nut-free"],
-        pickup_start=_future(1), pickup_end=_future(3),
-        status=ListingStatus.active, created_at=_now,
-    ),
-    "seed-4": Listing(
-        id="seed-4", restaurant_id="rest-003",
-        title="Halal Chicken Rice Boxes",
-        description="Freshly cooked halal chicken over basmati. 8 individual boxes ready.",
-        quantity=8, dietary_tags=["halal"],
-        pickup_start=_future(0.5), pickup_end=_future(2),
-        status=ListingStatus.active, created_at=_now,
-    ),
-    "seed-5": Listing(
-        id="seed-5", restaurant_id="rest-002",
-        title="Assorted Bakery Items",
-        description="Day-old muffins, croissants, and loaves. About 40 items.",
-        quantity=40, dietary_tags=["vegetarian", "contains_dairy"],
-        pickup_start=_future(0.25), pickup_end=_future(1.5),
-        status=ListingStatus.active, created_at=_now,
-    ),
-    "seed-6": Listing(
-        id="seed-6", restaurant_id="rest-004",
-        title="Mixed Salads — Catering Surplus",
-        description="Caesar, Greek, and garden salads from a cancelled corporate order. 25 portions.",
-        quantity=25, dietary_tags=["vegetarian", "gluten-free"],
-        pickup_start=_future(1), pickup_end=_future(2.5),
-        status=ListingStatus.active, created_at=_now,
-        address="123 Campus Dr, College Park MD",
-        location_name="Student Union Catering",
-        lat=38.9872, lng=-76.9426,
-    ),
-    "seed-7": Listing(
-        id="seed-7", restaurant_id="rest-001",
-        title="Lentil Soup — Vegan",
-        description="Large pot of red lentil soup with flatbreads. 15 servings.",
-        quantity=15, dietary_tags=["vegan", "halal", "gluten-free"],
-        pickup_start=_future(2), pickup_end=_future(4),
-        status=ListingStatus.active, created_at=_now,
-    ),
-    "seed-8": Listing(
-        id="seed-8", restaurant_id="rest-005",
-        title="Sushi Platters",
-        description="Surplus sushi rolls from lunch service — 6 platters, ~48 pieces each.",
-        quantity=6, dietary_tags=["gluten-free"],
-        pickup_start=_future(0.1), pickup_end=_future(0.75),
-        status=ListingStatus.active, created_at=_now,
-    ),
+def _persist_listing(listing: "Listing") -> None:
+    with _listings_persist_lock:
+        with _sqlite3.connect(_LISTINGS_DB) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO listings (id, data) VALUES (?, ?)",
+                (listing.id, listing.model_dump_json()),
+            )
 
-    # -----------------------------------------------------------------------
-    # College Park, MD listings (seed-cp-1 through seed-cp-10)
-    # -----------------------------------------------------------------------
-    "seed-cp-1": Listing(
-        id="seed-cp-1", restaurant_id="rest-001",
-        title="Terp Tacos — Beef & Chicken",
-        description="End-of-night surplus from our taco bar: seasoned beef, grilled chicken, salsa, tortillas. ~35 portions.",
-        quantity=35, dietary_tags=["halal", "gluten"],
-        pickup_start=_future(0.5), pickup_end=_future(2),
-        status=ListingStatus.active, created_at=_now,
-        address="7777 Baltimore Ave, College Park, MD 20740",
-        location_name="Terp Taqueria",
-        lat=38.9807, lng=-76.9369,
-    ),
-    "seed-cp-2": Listing(
-        id="seed-cp-2", restaurant_id="rest-002",
-        title="UMD Dining Hall Soup & Bread",
-        description="Minestrone soup and assorted dinner rolls from South Campus Dining. 40 servings.",
-        quantity=40, dietary_tags=["vegetarian", "contains_dairy"],
-        pickup_start=_future(1), pickup_end=_future(3),
-        status=ListingStatus.active, created_at=_now,
-        address="3150 S Campus Dining Hall Dr, College Park, MD 20742",
-        location_name="South Campus Dining",
-        lat=38.9836, lng=-76.9446,
-    ),
-    "seed-cp-3": Listing(
-        id="seed-cp-3", restaurant_id="rest-003",
-        title="Halal Lamb Over Rice",
-        description="Street-style halal lamb and white rice with white sauce. 18 portions left.",
-        quantity=18, dietary_tags=["halal", "gluten-free"],
-        pickup_start=_future(0.25), pickup_end=_future(1.75),
-        status=ListingStatus.active, created_at=_now,
-        address="8001 Baltimore Ave, College Park, MD 20740",
-        location_name="Halal Cart at Route 1",
-        lat=38.9815, lng=-76.9372,
-    ),
-    "seed-cp-4": Listing(
-        id="seed-cp-4", restaurant_id="rest-004",
-        title="Vegan Wraps & Smoothies",
-        description="Leftover veggie wraps and unsold fruit smoothies from the market. 22 items.",
-        quantity=22, dietary_tags=["vegan", "gluten-free", "nut-free"],
-        pickup_start=_future(0.5), pickup_end=_future(2),
-        status=ListingStatus.active, created_at=_now,
-        address="7401 Baltimore Ave, College Park, MD 20740",
-        location_name="The Greens Market",
-        lat=38.9776, lng=-76.9361,
-    ),
-    "seed-cp-5": Listing(
-        id="seed-cp-5", restaurant_id="rest-005",
-        title="Korean BBQ Rice Bowls",
-        description="Bulgogi and bibimbap bowls from today's lunch special. 14 portions remaining.",
-        quantity=14, dietary_tags=["gluten"],
-        pickup_start=_future(1.5), pickup_end=_future(3),
-        status=ListingStatus.active, created_at=_now,
-        address="8051 Baltimore Ave, College Park, MD 20740",
-        location_name="Seoul Kitchen CP",
-        lat=38.9821, lng=-76.9376,
-    ),
-    "seed-cp-6": Listing(
-        id="seed-cp-6", restaurant_id="rest-001",
-        title="Pizza Slices — Cheese & Veggie",
-        description="Leftover pizza slices from a study session catering order. ~28 slices.",
-        quantity=28, dietary_tags=["vegetarian", "contains_dairy", "gluten"],
-        pickup_start=_future(0.1), pickup_end=_future(1),
-        status=ListingStatus.active, created_at=_now,
-        address="7315 Baltimore Ave, College Park, MD 20740",
-        location_name="Campus Pizza Co.",
-        lat=38.9763, lng=-76.9356,
-    ),
-    "seed-cp-7": Listing(
-        id="seed-cp-7", restaurant_id="rest-002",
-        title="Breakfast Burritos & Fruit Cups",
-        description="Scrambled egg burritos with salsa and mixed fruit cups. 20 portions.",
-        quantity=20, dietary_tags=["vegetarian", "gluten", "contains_dairy"],
-        pickup_start=_future(0), pickup_end=_future(1.25),
-        status=ListingStatus.active, created_at=_now,
-        address="7516 Baltimore Ave, College Park, MD 20740",
-        location_name="Morning Rush Café",
-        lat=38.9789, lng=-76.9363,
-    ),
-    "seed-cp-8": Listing(
-        id="seed-cp-8", restaurant_id="rest-003",
-        title="Indian Curry — Chana Masala & Naan",
-        description="Large tray of chana masala with garlic naan. Serves ~30.",
-        quantity=30, dietary_tags=["vegan", "halal"],
-        pickup_start=_future(2), pickup_end=_future(4),
-        status=ListingStatus.active, created_at=_now,
-        address="4519 Knox Rd, College Park, MD 20740",
-        location_name="Spice Route Kitchen",
-        lat=38.9852, lng=-76.9403,
-    ),
-    "seed-cp-9": Listing(
-        id="seed-cp-9", restaurant_id="rest-004",
-        title="Boxed Lunches — Alumni Event",
-        description="Catered boxed lunches from UMD alumni luncheon. Turkey, veggie, and gluten-free options.",
-        quantity=45, dietary_tags=["vegetarian-option", "gluten-free-option"],
-        pickup_start=_future(0.5), pickup_end=_future(2.5),
-        status=ListingStatus.active, created_at=_now,
-        address="7801 Alumni Dr, College Park, MD 20742",
-        location_name="Samuel Riggs IV Alumni Center",
-        lat=38.9899, lng=-76.9445,
-    ),
-    "seed-cp-10": Listing(
-        id="seed-cp-10", restaurant_id="rest-005",
-        title="Cookies & Pastries — Bakery Closeout",
-        description="Chocolate chip cookies, brownies, and croissants from end-of-day. ~50 items.",
-        quantity=50, dietary_tags=["vegetarian", "contains_dairy", "gluten"],
-        pickup_start=_future(0.25), pickup_end=_future(1.5),
-        status=ListingStatus.active, created_at=_now,
-        address="7400 Baltimore Ave, College Park, MD 20740",
-        location_name="The Baked Terrapin",
-        lat=38.9774, lng=-76.9360,
-    ),
 
-    # -----------------------------------------------------------------------
-    # Greater DC-area listings (seed-dc-1 through seed-dc-30)
-    # -----------------------------------------------------------------------
-    "seed-dc-1": Listing(
-        id="seed-dc-1", restaurant_id="rest-001",
-        title="Grilled Salmon & Roasted Vegetables",
-        description="Atlantic salmon fillets with seasonal roasted vegetables from tonight's service.",
-        quantity=16, dietary_tags=["gluten-free", "dairy-free"],
-        pickup_start=_future(1), pickup_end=_future(3),
-        status=ListingStatus.active, created_at=_now,
-        address="1250 H St NE, Washington, DC 20002",
-        location_name="H Street Grille",
-        lat=38.8997, lng=-76.9880,
-    ),
-    "seed-dc-2": Listing(
-        id="seed-dc-2", restaurant_id="rest-002",
-        title="Ethiopian Combo Platter",
-        description="Injera with lentil stew, collard greens, and spiced chickpeas. 20 portions.",
-        quantity=20, dietary_tags=["vegan", "gluten-free", "halal"],
-        pickup_start=_future(0.5), pickup_end=_future(2),
-        status=ListingStatus.active, created_at=_now,
-        address="2201 Georgia Ave NW, Washington, DC 20001",
-        location_name="Addis Market DC",
-        lat=38.9201, lng=-77.0201,
-    ),
-    "seed-dc-3": Listing(
-        id="seed-dc-3", restaurant_id="rest-003",
-        title="BBQ Pulled Pork Sandwiches",
-        description="Slow-cooked pulled pork on brioche buns. Includes coleslaw and pickles. 24 portions.",
-        quantity=24, dietary_tags=["gluten"],
-        pickup_start=_future(0.25), pickup_end=_future(1.5),
-        status=ListingStatus.active, created_at=_now,
-        address="3214 Georgia Ave NW, Washington, DC 20010",
-        location_name="Smoke & Ember BBQ",
-        lat=38.9356, lng=-77.0211,
-    ),
-    "seed-dc-4": Listing(
-        id="seed-dc-4", restaurant_id="rest-004",
-        title="Tomato Bisque & Grilled Cheese",
-        description="Creamy tomato bisque and halved grilled cheese sandwiches. 18 meal combos.",
-        quantity=18, dietary_tags=["vegetarian", "contains_dairy", "gluten"],
-        pickup_start=_future(1), pickup_end=_future(2.5),
-        status=ListingStatus.active, created_at=_now,
-        address="1400 14th St NW, Washington, DC 20005",
-        location_name="The Soup Spot NW",
-        lat=38.9087, lng=-77.0317,
-    ),
-    "seed-dc-5": Listing(
-        id="seed-dc-5", restaurant_id="rest-005",
-        title="Pho & Spring Rolls",
-        description="Beef pho broth with rice noodles and crispy spring rolls. 12 sets.",
-        quantity=12, dietary_tags=["gluten-free"],
-        pickup_start=_future(2), pickup_end=_future(4),
-        status=ListingStatus.active, created_at=_now,
-        address="6763 Wilson Blvd, Falls Church, VA 22044",
-        location_name="Eden Center Pho House",
-        lat=38.8734, lng=-77.1676,
-    ),
-    "seed-dc-6": Listing(
-        id="seed-dc-6", restaurant_id="rest-001",
-        title="Dim Sum Assortment",
-        description="Leftover dim sum from weekend brunch — dumplings, bao, and turnip cakes. ~60 pieces.",
-        quantity=60, dietary_tags=["contains_dairy"],
-        pickup_start=_future(0.5), pickup_end=_future(2),
-        status=ListingStatus.active, created_at=_now,
-        address="418 H St NE, Washington, DC 20002",
-        location_name="Lucky Star Dim Sum",
-        lat=38.8989, lng=-77.0043,
-    ),
-    "seed-dc-7": Listing(
-        id="seed-dc-7", restaurant_id="rest-002",
-        title="Mediterranean Mezze Spread",
-        description="Hummus, baba ganoush, falafel, and pita bread. Serves ~25.",
-        quantity=25, dietary_tags=["vegan", "nut-free"],
-        pickup_start=_future(0.1), pickup_end=_future(1.25),
-        status=ListingStatus.active, created_at=_now,
-        address="1120 19th St NW, Washington, DC 20036",
-        location_name="Zaytinya Catering Overflow",
-        lat=38.9034, lng=-77.0418,
-    ),
-    "seed-dc-8": Listing(
-        id="seed-dc-8", restaurant_id="rest-003",
-        title="Jerk Chicken & Rice and Peas",
-        description="Traditional Jamaican jerk chicken with rice and peas. 22 portions.",
-        quantity=22, dietary_tags=["gluten-free", "halal"],
-        pickup_start=_future(1), pickup_end=_future(3),
-        status=ListingStatus.active, created_at=_now,
-        address="2916 Georgia Ave NW, Washington, DC 20001",
-        location_name="Island Vibes Kitchen",
-        lat=38.9312, lng=-77.0212,
-    ),
-    "seed-dc-9": Listing(
-        id="seed-dc-9", restaurant_id="rest-004",
-        title="Catered Conference Lunch",
-        description="Assorted wraps, pasta salad, and mini desserts from a think-tank event.",
-        quantity=38, dietary_tags=["vegetarian-option", "gluten-free-option"],
-        pickup_start=_future(0.5), pickup_end=_future(2),
-        status=ListingStatus.active, created_at=_now,
-        address="1775 Eye St NW, Washington, DC 20006",
-        location_name="Brookings Event Catering",
-        lat=38.9006, lng=-77.0427,
-    ),
-    "seed-dc-10": Listing(
-        id="seed-dc-10", restaurant_id="rest-005",
-        title="Soba Noodle Bowls",
-        description="Cold soba with dashi broth, tofu, scallions, and nori. 10 portions.",
-        quantity=10, dietary_tags=["vegan", "gluten-free"],
-        pickup_start=_future(1.5), pickup_end=_future(3),
-        status=ListingStatus.active, created_at=_now,
-        address="1512 Connecticut Ave NW, Washington, DC 20036",
-        location_name="Noodle & Miso DC",
-        lat=38.9143, lng=-77.0457,
-    ),
-    "seed-dc-11": Listing(
-        id="seed-dc-11", restaurant_id="rest-001",
-        title="Roast Turkey Dinner Plates",
-        description="Sliced roast turkey with mashed potatoes and gravy, green beans. 15 plates.",
-        quantity=15, dietary_tags=["gluten"],
-        pickup_start=_future(0.5), pickup_end=_future(2),
-        status=ListingStatus.active, created_at=_now,
-        address="8711 Georgia Ave, Silver Spring, MD 20910",
-        location_name="Silver Spring Bistro",
-        lat=38.9967, lng=-77.0271,
-    ),
-    "seed-dc-12": Listing(
-        id="seed-dc-12", restaurant_id="rest-002",
-        title="Bagels & Cream Cheese",
-        description="Assorted bagels (plain, everything, sesame) with cream cheese and lox spread. ~50 bagels.",
-        quantity=50, dietary_tags=["vegetarian", "contains_dairy", "gluten"],
-        pickup_start=_future(0), pickup_end=_future(1),
-        status=ListingStatus.active, created_at=_now,
-        address="930 Bonifant St, Silver Spring, MD 20910",
-        location_name="Bagel Place Silver Spring",
-        lat=38.9939, lng=-77.0292,
-    ),
-    "seed-dc-13": Listing(
-        id="seed-dc-13", restaurant_id="rest-003",
-        title="Pupusas & Curtido",
-        description="Cheese and loroco pupusas with fermented cabbage slaw. 32 pupusas.",
-        quantity=32, dietary_tags=["vegetarian", "contains_dairy", "gluten"],
-        pickup_start=_future(1), pickup_end=_future(3),
-        status=ListingStatus.active, created_at=_now,
-        address="8149 Fenton St, Silver Spring, MD 20910",
-        location_name="La Pupuseria Salvadoreña",
-        lat=38.9924, lng=-77.0276,
-    ),
-    "seed-dc-14": Listing(
-        id="seed-dc-14", restaurant_id="rest-004",
-        title="Loaded Baked Potato Bar",
-        description="Baked potatoes with toppings bar: sour cream, cheddar, broccoli, bacon bits. 20 portions.",
-        quantity=20, dietary_tags=["vegetarian-option", "gluten-free", "contains_dairy"],
-        pickup_start=_future(0.5), pickup_end=_future(2),
-        status=ListingStatus.active, created_at=_now,
-        address="12276 Rockville Pike, Rockville, MD 20852",
-        location_name="The Spud Shack Rockville",
-        lat=39.0570, lng=-77.1236,
-    ),
-    "seed-dc-15": Listing(
-        id="seed-dc-15", restaurant_id="rest-005",
-        title="Crepes — Sweet & Savory",
-        description="Buckwheat galettes (ham/gruyere) and dessert crepes (Nutella). 30 pieces total.",
-        quantity=30, dietary_tags=["vegetarian-option", "contains_dairy", "gluten"],
-        pickup_start=_future(0.25), pickup_end=_future(1.5),
-        status=ListingStatus.active, created_at=_now,
-        address="7711 Woodmont Ave, Bethesda, MD 20814",
-        location_name="Le Crêpe Bethesda",
-        lat=38.9836, lng=-77.0970,
-    ),
-    "seed-dc-16": Listing(
-        id="seed-dc-16", restaurant_id="rest-001",
-        title="Chili & Cornbread",
-        description="Hearty beef and bean chili with jalapeño cornbread muffins. 28 portions.",
-        quantity=28, dietary_tags=["gluten"],
-        pickup_start=_future(1), pickup_end=_future(3),
-        status=ListingStatus.active, created_at=_now,
-        address="4860 Rugby Ave, Bethesda, MD 20814",
-        location_name="Firehouse Chili Co.",
-        lat=38.9784, lng=-77.0942,
-    ),
-    "seed-dc-17": Listing(
-        id="seed-dc-17", restaurant_id="rest-002",
-        title="Tofu & Vegetable Stir Fry",
-        description="Pan-fried tofu with bok choy, snap peas, and ginger soy sauce over brown rice.",
-        quantity=18, dietary_tags=["vegan", "gluten-free"],
-        pickup_start=_future(2), pickup_end=_future(4),
-        status=ListingStatus.active, created_at=_now,
-        address="5765 Burke Centre Pkwy, Burke, VA 22015",
-        location_name="Green Wok VA",
-        lat=38.7887, lng=-77.2750,
-    ),
-    "seed-dc-18": Listing(
-        id="seed-dc-18", restaurant_id="rest-003",
-        title="Lobster Bisque & Crab Cakes",
-        description="Premium surplus from Saturday dinner service — rich bisque and pan-seared crab cakes.",
-        quantity=10, dietary_tags=["gluten", "contains_dairy"],
-        pickup_start=_future(0.5), pickup_end=_future(1.5),
-        status=ListingStatus.active, created_at=_now,
-        address="301 Water St SE, Washington, DC 20003",
-        location_name="The Wharf Seafood Co.",
-        lat=38.8756, lng=-77.0193,
-    ),
-    "seed-dc-19": Listing(
-        id="seed-dc-19", restaurant_id="rest-004",
-        title="Falafel Pita Wraps",
-        description="Crispy falafel, tzatziki, tomatoes, and cucumber in warm pita. 26 wraps.",
-        quantity=26, dietary_tags=["vegetarian", "nut-free"],
-        pickup_start=_future(0.5), pickup_end=_future(2.5),
-        status=ListingStatus.active, created_at=_now,
-        address="2100 P St NW, Washington, DC 20037",
-        location_name="Falafel Kingdom DuPont",
-        lat=38.9107, lng=-77.0480,
-    ),
-    "seed-dc-20": Listing(
-        id="seed-dc-20", restaurant_id="rest-005",
-        title="Chicken Tikka Masala & Naan",
-        description="Rich chicken tikka masala with basmati rice and garlic naan. 20 portions.",
-        quantity=20, dietary_tags=["gluten", "contains_dairy", "halal"],
-        pickup_start=_future(1), pickup_end=_future(3),
-        status=ListingStatus.active, created_at=_now,
-        address="327 8th St NE, Washington, DC 20002",
-        location_name="Spice Garden NE",
-        lat=38.8938, lng=-76.9965,
-    ),
-    "seed-dc-21": Listing(
-        id="seed-dc-21", restaurant_id="rest-001",
-        title="Mac & Cheese — Event Surplus",
-        description="Creamy baked mac and cheese from a birthday party catering. ~40 portions.",
-        quantity=40, dietary_tags=["vegetarian", "contains_dairy", "gluten"],
-        pickup_start=_future(0.25), pickup_end=_future(2),
-        status=ListingStatus.active, created_at=_now,
-        address="4601 Connecticut Ave NW, Washington, DC 20008",
-        location_name="Connecticut Ave Events",
-        lat=38.9441, lng=-77.0773,
-    ),
-    "seed-dc-22": Listing(
-        id="seed-dc-22", restaurant_id="rest-002",
-        title="Gyros & Greek Salad",
-        description="Lamb and chicken gyros with tzatziki, plus side Greek salads. 18 portions.",
-        quantity=18, dietary_tags=["gluten", "contains_dairy"],
-        pickup_start=_future(1), pickup_end=_future(3),
-        status=ListingStatus.active, created_at=_now,
-        address="8661 Colesville Rd, Silver Spring, MD 20910",
-        location_name="Athens Grille Silver Spring",
-        lat=38.9954, lng=-77.0245,
-    ),
-    "seed-dc-23": Listing(
-        id="seed-dc-23", restaurant_id="rest-003",
-        title="Vegetarian Moussaka",
-        description="Eggplant and lentil moussaka with béchamel topping. 14 portions.",
-        quantity=14, dietary_tags=["vegetarian", "contains_dairy", "gluten-free"],
-        pickup_start=_future(2), pickup_end=_future(4),
-        status=ListingStatus.active, created_at=_now,
-        address="7929 Wisconsin Ave, Bethesda, MD 20814",
-        location_name="Bethesda Greek Taverna",
-        lat=38.9855, lng=-77.0963,
-    ),
-    "seed-dc-24": Listing(
-        id="seed-dc-24", restaurant_id="rest-004",
-        title="Cuban Sandwiches & Plantains",
-        description="Pressed Cuban sandwiches and fried sweet plantains. 22 combos.",
-        quantity=22, dietary_tags=["gluten"],
-        pickup_start=_future(0.5), pickup_end=_future(2),
-        status=ListingStatus.active, created_at=_now,
-        address="3176 Bladensburg Rd NE, Washington, DC 20018",
-        location_name="Havana Nights Kitchen",
-        lat=38.9122, lng=-76.9705,
-    ),
-    "seed-dc-25": Listing(
-        id="seed-dc-25", restaurant_id="rest-005",
-        title="Miso Ramen & Karaage Chicken",
-        description="Rich miso ramen with soft-boiled egg and Japanese fried chicken. 8 sets.",
-        quantity=8, dietary_tags=["gluten"],
-        pickup_start=_future(1.5), pickup_end=_future(3),
-        status=ListingStatus.active, created_at=_now,
-        address="5185 MacArthur Blvd NW, Washington, DC 20016",
-        location_name="Sakura Ramen NW",
-        lat=38.9392, lng=-77.1068,
-    ),
-    "seed-dc-26": Listing(
-        id="seed-dc-26", restaurant_id="rest-001",
-        title="Jambalaya — Catering Surplus",
-        description="New Orleans-style jambalaya with andouille sausage, shrimp, and rice. 30 portions.",
-        quantity=30, dietary_tags=["gluten-free"],
-        pickup_start=_future(0.5), pickup_end=_future(2),
-        status=ListingStatus.active, created_at=_now,
-        address="1310 U St NW, Washington, DC 20009",
-        location_name="Bayou Bites U Street",
-        lat=38.9167, lng=-77.0302,
-    ),
-    "seed-dc-27": Listing(
-        id="seed-dc-27", restaurant_id="rest-002",
-        title="Veggie Burgers & Sweet Potato Fries",
-        description="Plant-based burgers on brioche buns with lettuce, tomato, and aioli. 20 meals.",
-        quantity=20, dietary_tags=["vegan", "gluten"],
-        pickup_start=_future(0.25), pickup_end=_future(1.5),
-        status=ListingStatus.active, created_at=_now,
-        address="4910 Wisconsin Ave NW, Washington, DC 20016",
-        location_name="The Green Counter NW",
-        lat=38.9498, lng=-77.0852,
-    ),
-    "seed-dc-28": Listing(
-        id="seed-dc-28", restaurant_id="rest-003",
-        title="Pierogi & Kielbasa Plate",
-        description="Potato and cheese pierogi with grilled kielbasa and sautéed onions. 24 plates.",
-        quantity=24, dietary_tags=["contains_dairy", "gluten"],
-        pickup_start=_future(1), pickup_end=_future(3),
-        status=ListingStatus.active, created_at=_now,
-        address="7600 Georgia Ave NW, Washington, DC 20012",
-        location_name="Polka Dot Kitchen",
-        lat=38.9754, lng=-77.0260,
-    ),
-    "seed-dc-29": Listing(
-        id="seed-dc-29", restaurant_id="rest-004",
-        title="Moroccan Tagine with Couscous",
-        description="Lamb and apricot tagine over fluffy couscous with harissa on the side. 16 portions.",
-        quantity=16, dietary_tags=["gluten", "halal"],
-        pickup_start=_future(2), pickup_end=_future(4),
-        status=ListingStatus.active, created_at=_now,
-        address="2134 Columbia Rd NW, Washington, DC 20009",
-        location_name="Marrakesh Table",
-        lat=38.9247, lng=-77.0417,
-    ),
-    "seed-dc-30": Listing(
-        id="seed-dc-30", restaurant_id="rest-005",
-        title="Breakfast Buffet Takeaway",
-        description="Scrambled eggs, turkey bacon, hash browns, and fruit salad from a morning meeting.",
-        quantity=35, dietary_tags=["gluten-free", "dairy-free"],
-        pickup_start=_future(0), pickup_end=_future(0.75),
-        status=ListingStatus.active, created_at=_now,
-        address="1100 Wilson Blvd, Arlington, VA 22209",
-        location_name="Rosslyn Conference Center",
-        lat=38.8962, lng=-77.0724,
-    ),
-}
+def _remove_persisted_listing(listing_id: str) -> None:
+    with _listings_persist_lock:
+        with _sqlite3.connect(_LISTINGS_DB) as conn:
+            conn.execute("DELETE FROM listings WHERE id = ?", (listing_id,))
 
+
+def _persist_claim(claim: "Claim") -> None:
+    with _listings_persist_lock:
+        with _sqlite3.connect(_LISTINGS_DB) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO claims (id, listing_id, data) VALUES (?, ?, ?)",
+                (claim.id, claim.listing_id, claim.model_dump_json()),
+            )
+
+
+def _remove_persisted_claim(claim_id: str) -> None:
+    with _listings_persist_lock:
+        with _sqlite3.connect(_LISTINGS_DB) as conn:
+            conn.execute("DELETE FROM claims WHERE id = ?", (claim_id,))
+
+
+def _load_persisted_data() -> None:
+    """Load listings and claims from SQLite into the in-memory dicts on startup."""
+    try:
+        with _sqlite3.connect(_LISTINGS_DB) as conn:
+            for (data,) in conn.execute("SELECT data FROM listings"):
+                try:
+                    obj = Listing.model_validate_json(data)
+                    listings[obj.id] = obj
+                except Exception:
+                    pass
+            for (data,) in conn.execute("SELECT data FROM claims"):
+                try:
+                    obj = Claim.model_validate_json(data)
+                    claims[obj.id] = obj
+                except Exception:
+                    pass
+    except Exception:
+        pass  # DB not yet created — fine on first run
+
+
+listings: dict[str, Listing] = {}
 claims: dict[str, Claim] = {}
+
+
+def _seed_listings() -> None:
+    """Seed demo listings idempotently — skips IDs already in memory."""
+    _now = datetime.now(timezone.utc)
+
+    def _future(hours: float) -> datetime:
+        return _now + timedelta(hours=hours)
+
+    _seeds: list[Listing] = [
+        Listing(
+            id="seed-cp-1", restaurant_id="rest-001",
+            title="Terp Tacos — Beef & Chicken",
+            description="End-of-night surplus from our taco bar: seasoned beef, grilled chicken, salsa, tortillas. ~35 portions.",
+            quantity=35, dietary_tags=["halal", "gluten"],
+            pickup_start=_future(0.5), pickup_end=_future(2),
+            status=ListingStatus.active, created_at=_now,
+            address="7777 Baltimore Ave, College Park, MD 20740",
+            location_name="Terp Taqueria", lat=38.9807, lng=-76.9369,
+        ),
+        Listing(
+            id="seed-cp-2", restaurant_id="rest-002",
+            title="UMD Dining Hall Soup & Bread",
+            description="Minestrone soup and assorted dinner rolls from South Campus Dining. 40 servings.",
+            quantity=40, dietary_tags=["vegetarian", "contains_dairy"],
+            pickup_start=_future(1), pickup_end=_future(3),
+            status=ListingStatus.active, created_at=_now,
+            address="3150 S Campus Dining Hall Dr, College Park, MD 20742",
+            location_name="South Campus Dining", lat=38.9836, lng=-76.9446,
+        ),
+        Listing(
+            id="seed-cp-3", restaurant_id="rest-003",
+            title="Halal Lamb Over Rice",
+            description="Street-style halal lamb and white rice with white sauce. 18 portions left.",
+            quantity=18, dietary_tags=["halal", "gluten-free"],
+            pickup_start=_future(0.25), pickup_end=_future(1.75),
+            status=ListingStatus.active, created_at=_now,
+            address="8001 Baltimore Ave, College Park, MD 20740",
+            location_name="Halal Cart at Route 1", lat=38.9815, lng=-76.9372,
+        ),
+        Listing(
+            id="seed-cp-4", restaurant_id="rest-004",
+            title="Vegan Wraps & Smoothies",
+            description="Leftover veggie wraps and unsold fruit smoothies from the market. 22 items.",
+            quantity=22, dietary_tags=["vegan", "gluten-free", "nut-free"],
+            pickup_start=_future(0.5), pickup_end=_future(2),
+            status=ListingStatus.active, created_at=_now,
+            address="7401 Baltimore Ave, College Park, MD 20740",
+            location_name="The Greens Market", lat=38.9776, lng=-76.9361,
+        ),
+        Listing(
+            id="seed-cp-5", restaurant_id="rest-005",
+            title="Korean BBQ Rice Bowls",
+            description="Bulgogi and bibimbap bowls from today's lunch special. 14 portions remaining.",
+            quantity=14, dietary_tags=["gluten"],
+            pickup_start=_future(1.5), pickup_end=_future(3),
+            status=ListingStatus.active, created_at=_now,
+            address="8051 Baltimore Ave, College Park, MD 20740",
+            location_name="Seoul Kitchen CP", lat=38.9821, lng=-76.9376,
+        ),
+        Listing(
+            id="seed-dc-1", restaurant_id="rest-001",
+            title="Grilled Salmon & Roasted Vegetables",
+            description="Atlantic salmon fillets with seasonal roasted vegetables from tonight's service.",
+            quantity=16, dietary_tags=["gluten-free", "dairy-free"],
+            pickup_start=_future(1), pickup_end=_future(3),
+            status=ListingStatus.active, created_at=_now,
+            address="1250 H St NE, Washington, DC 20002",
+            location_name="H Street Grille", lat=38.8997, lng=-76.9880,
+        ),
+        Listing(
+            id="seed-dc-2", restaurant_id="rest-002",
+            title="Ethiopian Combo Platter",
+            description="Injera with lentil stew, collard greens, and spiced chickpeas. 20 portions.",
+            quantity=20, dietary_tags=["vegan", "gluten-free", "halal"],
+            pickup_start=_future(0.5), pickup_end=_future(2),
+            status=ListingStatus.active, created_at=_now,
+            address="910 U St NW, Washington, DC 20001",
+            location_name="Addis Ethiopian", lat=38.9171, lng=-77.0289,
+        ),
+        Listing(
+            id="seed-dc-3", restaurant_id="rest-003",
+            title="Dim Sum Assortment",
+            description="Har gow, siu mai, and BBQ pork buns. 30 portions from weekend brunch.",
+            quantity=30, dietary_tags=["gluten", "contains_dairy"],
+            pickup_start=_future(0.75), pickup_end=_future(2.5),
+            status=ListingStatus.active, created_at=_now,
+            address="6th & H St NW, Washington, DC 20001",
+            location_name="China Garden DC", lat=38.9007, lng=-77.0180,
+        ),
+    ]
+    for seed in _seeds:
+        if seed.id not in listings:
+            listings[seed.id] = seed
+            _persist_listing(seed)
+
+
+# ---------------------------------------------------------------------------
+# Startup: init DB, load persisted state, seed demo data
+# ---------------------------------------------------------------------------
+
+_init_listings_db()
+_load_persisted_data()
+_seed_listings()
 
 # ---------------------------------------------------------------------------
 # Business helpers
@@ -1364,6 +1012,7 @@ def create_listing(
         priority_window_end=priority_window_end,
     )
     listings[listing.id] = listing
+    _persist_listing(listing)
     return ok_created(_to_response_dict(listing), "Listing created successfully")
 
 
@@ -1435,9 +1084,11 @@ def claim_listing(
             slot_id=payload.slot_id,
         )
         claims[claim.id] = claim
+        _persist_claim(claim)
         new_quantity = listing.quantity - payload.claimed_quantity
         updated = listing.model_copy(update={"quantity": new_quantity, "status": ListingStatus.claimed})
         listings[listing_id] = updated
+        _persist_listing(updated)
         return ok(_listing_dict(updated), "Listing claimed successfully")
 
 
@@ -1494,10 +1145,12 @@ def bulk_claim_listing(
             is_bulk=True,
         )
         claims[claim.id] = claim
+        _persist_claim(claim)
         updated = listing.model_copy(
             update={"quantity": listing.quantity - payload.claimed_quantity, "status": ListingStatus.claimed}
         )
         listings[listing_id] = updated
+        _persist_listing(updated)
         return ok(
             {"claim": claim.model_dump(mode="json"), "listing": _listing_dict(updated)},
             "Bulk claim registered successfully",
@@ -1529,6 +1182,7 @@ def update_listing_status(
         )
     updated = listing.model_copy(update={"status": payload.status})
     listings[listing_id] = updated
+    _persist_listing(updated)
     return ok(_listing_dict(updated), f"Listing status updated to '{payload.status.value}'")
 
 
@@ -1540,6 +1194,7 @@ def delete_listing(
     listing = listings.pop(listing_id, None)
     if not listing:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Listing not found"})
+    _remove_persisted_listing(listing_id)
     return ok(_listing_dict(listing), "Listing deleted successfully")
 
 
@@ -1604,15 +1259,16 @@ def cancel_claim(
     with _claim_lock:
         updated_claim = claim.model_copy(update={"status": "cancelled"})
         claims[claim_id] = updated_claim
+        _persist_claim(updated_claim)
         listing = listings.get(claim.listing_id)
         if listing:
             restored_qty = listing.quantity + claim.claimed_quantity
             new_status = (
                 ListingStatus.active if listing.status == ListingStatus.claimed else listing.status
             )
-            listings[claim.listing_id] = listing.model_copy(
-                update={"quantity": restored_qty, "status": new_status}
-            )
+            updated_listing = listing.model_copy(update={"quantity": restored_qty, "status": new_status})
+            listings[claim.listing_id] = updated_listing
+            _persist_listing(updated_listing)
     return ok(updated_claim.model_dump(mode="json"), "Claim cancelled successfully")
 
 
