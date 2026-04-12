@@ -79,7 +79,7 @@ export default function HomePage() {
               </button>
             ) : (
               <>
-                <Link to="/login" style={{ color: 'var(--mm-text-2)', textDecoration: 'none', fontWeight: 600, fontSize: '.875rem', padding: '8px 12px' }}>
+                <Link to="/login" style={{ color: 'rgba(241,245,249,.88)', textDecoration: 'none', fontWeight: 600, fontSize: '.875rem', padding: '8px 12px' }}>
                   Sign In
                 </Link>
                 <Link to="/signup" className="mm-btn mm-btn-primary mm-btn-sm" style={{ textDecoration: 'none' }}>
@@ -106,7 +106,7 @@ export default function HomePage() {
             </h1>
 
             <p className="mm-hero-subtitle">
-              MealMatch connects restaurants with surplus food to the people who need it —
+              MealMatch connects restaurants with surplus food to the people who need it
               fast, transparent, and built for everyone.
             </p>
 
@@ -152,7 +152,7 @@ export default function HomePage() {
               A platform built around dignity, urgency, and local coordination.
             </h2>
             <p style={{ fontSize: '.9375rem', color: 'var(--mm-text-3)', lineHeight: 1.7, margin: 0 }}>
-              Not just logistics — making surplus food recovery feel trustworthy,
+              Not just logistics making surplus food recovery feel trustworthy,
               fast, and human for every role.
             </p>
           </div>

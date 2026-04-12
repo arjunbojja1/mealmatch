@@ -23,7 +23,6 @@ import AdminDashboard from './AdminDashboard'
 import MyClaimsPage from './pages/MyClaimsPage'
 import PartnerPage from './pages/PartnerPage'
 
-import { getHealth } from './api/client'
 import './App.css'
 
 // ── Role colors (light-mode safe) ──────────────────────────────────────────
@@ -40,14 +39,7 @@ function AppShell() {
   const navigate  = useNavigate()
   const location  = useLocation()
   const menuRef   = useRef(null)
-  const [backendHealthy, setBackendHealthy] = useState(null)
   const [menuOpen,       setMenuOpen]       = useState(false)
-
-  useEffect(() => {
-    getHealth()
-      .then(() => setBackendHealthy(true))
-      .catch(() => setBackendHealthy(false))
-  }, [])
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -74,8 +66,6 @@ function AppShell() {
   ]
   const visibleTabs = allTabs.filter(t => t.roles.includes(user?.role))
   const activeKey   = visibleTabs.find(t => location.pathname.startsWith(t.path))?.key
-  const roleColor   = ROLE_COLOR[user?.role] || '#636366'
-  const healthColor = backendHealthy === null ? '#AEAEB2' : backendHealthy ? '#16A34A' : '#DC2626'
 
   return (
     <div style={{ minHeight: '100svh', display: 'flex', flexDirection: 'column', background: 'var(--mm-bg)' }}>
@@ -86,7 +76,7 @@ function AppShell() {
           position: 'sticky',
           top: 0,
           zIndex: 200,
-          background: 'rgba(255,255,255,0.88)',
+          background: 'rgba(0,0,0,0.96)',
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
           borderBottom: '1px solid var(--mm-border)',
@@ -112,8 +102,8 @@ function AppShell() {
             }}
             aria-label="MealMatch home"
           >
-            <img src="/MealMatch Logo.png" alt="" style={{ height: 30, width: 'auto', borderRadius: 7 }} />
-            <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--mm-text-1)', letterSpacing: '-.025em', whiteSpace: 'nowrap' }}>
+            <img src="/MealMatch Logo.png" alt="" style={{ height: 'var(--mm-header-logo-h)', width: 'auto', borderRadius: 12 }} />
+            <span style={{ fontSize: 18, fontWeight: 800, color: '#F8FAFC', letterSpacing: '-.025em', whiteSpace: 'nowrap' }}>
               MealMatch
             </span>
           </button>
@@ -134,34 +124,25 @@ function AppShell() {
 
           {/* Right side */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            {/* Health indicator */}
-            <div
-              style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              title={backendHealthy ? 'Backend live' : backendHealthy === false ? 'Backend offline' : 'Checking…'}
-            >
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: healthColor, flexShrink: 0, transition: 'background .4s' }} />
-            </div>
-
             {/* User pill — desktop */}
             <div
               className="mm-hide-mobile"
               style={{
                 display: 'flex', alignItems: 'center', gap: 8,
                 padding: '6px 12px', borderRadius: 'var(--mm-r-full)',
-                background: 'var(--mm-surface-2)',
-                border: '1px solid var(--mm-border)',
+                background: 'rgba(22,163,74,.12)',
+                border: '1px solid rgba(22,163,74,.24)',
               }}
             >
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: roleColor, flexShrink: 0 }} />
-              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--mm-text-2)', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: '#E2FBE8', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {user?.name || 'User'}
               </span>
-              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--mm-text-4)', textTransform: 'uppercase', letterSpacing: '.07em' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#86EFAC', textTransform: 'uppercase', letterSpacing: '.07em' }}>
                 {user?.role}
               </span>
               <button
-                onClick={() => { logout(); navigate('/login', { replace: true }) }}
-                style={{ background: 'none', border: 'none', color: 'var(--mm-text-4)', fontSize: 12, cursor: 'pointer', padding: '2px 4px', borderRadius: 4, transition: 'color var(--mm-dur)' }}
+                onClick={() => { logout(); window.location.assign('/') }}
+                style={{ background: 'none', border: 'none', color: 'rgba(226,251,232,.78)', fontSize: 12, cursor: 'pointer', padding: '2px 4px', borderRadius: 4, transition: 'color var(--mm-dur)' }}
               >
                 Sign out
               </button>
@@ -196,7 +177,7 @@ function AppShell() {
           <div
             style={{
               position: 'absolute', top: 'var(--mm-header-h)', left: 0, right: 0,
-              background: 'rgba(255,255,255,.97)',
+              background: 'rgba(0,0,0,0.98)',
               backdropFilter: 'blur(20px)',
               borderBottom: '1px solid var(--mm-border)',
               padding: '12px 16px 16px',
@@ -208,8 +189,7 @@ function AppShell() {
             role="menu"
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 4px' }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: roleColor }} />
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--mm-text-1)' }}>{user?.name || 'User'}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#F8FAFC' }}>{user?.name || 'User'}</span>
               <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--mm-text-4)', textTransform: 'uppercase', letterSpacing: '.07em' }}>{user?.role}</span>
             </div>
             <hr style={{ border: 'none', borderTop: '1px solid var(--mm-border)', margin: '4px 0' }} />
@@ -226,8 +206,8 @@ function AppShell() {
             ))}
             <hr style={{ border: 'none', borderTop: '1px solid var(--mm-border)', margin: '4px 0' }} />
             <button
-              onClick={() => { logout(); navigate('/login', { replace: true }) }}
-              style={{ background: 'none', border: 'none', color: 'var(--mm-error)', fontSize: 13, cursor: 'pointer', padding: '10px 14px', borderRadius: 'var(--mm-r-md)', textAlign: 'left', width: '100%', fontWeight: 500 }}
+              onClick={() => { logout(); window.location.assign('/') }}
+              style={{ background: 'none', border: 'none', color: '#FCA5A5', fontSize: 13, cursor: 'pointer', padding: '10px 14px', borderRadius: 'var(--mm-r-md)', textAlign: 'left', width: '100%', fontWeight: 500 }}
             >
               Sign out
             </button>

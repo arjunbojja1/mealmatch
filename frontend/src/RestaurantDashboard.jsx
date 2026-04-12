@@ -285,6 +285,11 @@ export default function RestaurantDashboard() {
     return activeListings;
   }, [selectedTab, activeListings, claimedListings, expiredListings]);
 
+  const savedAddresses = useMemo(
+    () => listings.map((listing) => listing.address).filter(Boolean),
+    [listings]
+  );
+
   return (
     <div className="mm-page-wrap">
       {/* Hero */}
@@ -398,7 +403,7 @@ export default function RestaurantDashboard() {
                 value={formData.address}
                 onAddressChange={handleAddressChange}
                 onSelect={handleAddressSelect}
-                existingAddresses={listings.map((l) => l.address).filter(Boolean)}
+                existingAddresses={savedAddresses}
               />
               {formData.lat != null && (
                 <div style={s.coordsHint}>
@@ -875,11 +880,12 @@ function AddressAutocomplete({ value, onAddressChange, onSelect, existingAddress
   const [showDropdown, setShowDropdown] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [isSearching, setIsSearching] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const debounceRef = useRef(null);
   const containerRef = useRef(null);
 
   useEffect(() => {
-    if (!value || value.length < 3) {
+    if (!isFocused || !value || value.length < 3) {
       setSuggestions([]);
       setShowDropdown(false);
       return;
@@ -934,12 +940,12 @@ function AddressAutocomplete({ value, onAddressChange, onSelect, existingAddress
       ].slice(0, 7);
 
       setSuggestions(merged);
-      setShowDropdown(merged.length > 0);
+      setShowDropdown(isFocused && merged.length > 0);
       setActiveIndex(-1);
     }, 300);
 
     return () => clearTimeout(debounceRef.current);
-  }, [value, existingAddresses]);
+  }, [value, existingAddresses, isFocused]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -984,8 +990,14 @@ function AddressAutocomplete({ value, onAddressChange, onSelect, existingAddress
         value={value}
         onChange={(e) => onAddressChange(e.target.value)}
         onKeyDown={handleKeyDown}
-        onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
-        onBlur={() => setTimeout(() => setShowDropdown(false), 160)}
+        onFocus={() => {
+          setIsFocused(true);
+          if (suggestions.length > 0) setShowDropdown(true);
+        }}
+        onBlur={() => {
+          setIsFocused(false);
+          setTimeout(() => setShowDropdown(false), 160);
+        }}
         className="mm-input"
         autoComplete="off"
       />

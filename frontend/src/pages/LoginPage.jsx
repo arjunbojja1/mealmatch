@@ -65,8 +65,8 @@ export default function LoginPage() {
         aria-hidden="true"
       >
         <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 12, marginBottom: 48 }}>
-          <img src="/MealMatch Logo.png" alt="" style={{ height: 44, borderRadius: 12 }} />
-          <span style={{ fontSize: 22, fontWeight: 800, color: '#1C1C1E', letterSpacing: '-.025em' }}>MealMatch</span>
+          <img src="/MealMatch Logo.png" alt="" style={{ height: 72, borderRadius: 16 }} />
+          <span style={{ fontSize: 26, fontWeight: 800, color: '#1C1C1E', letterSpacing: '-.025em' }}>MealMatch</span>
         </Link>
         <div>
           <p style={{ fontSize: '.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.12em', color: '#16A34A', marginBottom: 12 }}>
@@ -99,8 +99,8 @@ export default function LoginPage() {
 
           {/* Mobile logo */}
           <div className="mm-show-mobile" style={{ alignItems: 'center', gap: 10, marginBottom: 32 }}>
-            <img src="/MealMatch Logo.png" alt="" style={{ height: 34, borderRadius: 8 }} />
-            <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--mm-text-1)', letterSpacing: '-.025em' }}>MealMatch</span>
+            <img src="/MealMatch Logo.png" alt="" style={{ height: 54, borderRadius: 12 }} />
+            <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--mm-text-1)', letterSpacing: '-.025em' }}>MealMatch</span>
           </div>
 
           <h1 style={{ fontSize: '1.875rem', fontWeight: 800, letterSpacing: '-.04em', color: 'var(--mm-text-1)', marginBottom: 8 }}>

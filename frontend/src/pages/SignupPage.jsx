@@ -66,8 +66,8 @@ export default function SignupPage() {
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: 36 }}>
           <Link to="/" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
-            <img src="/MealMatch Logo.png" alt="" style={{ height: 38, borderRadius: 10 }} />
-            <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--mm-text-1)', letterSpacing: '-.025em' }}>MealMatch</span>
+            <img src="/MealMatch Logo.png" alt="" style={{ height: 66, borderRadius: 14 }} />
+            <span style={{ fontSize: 24, fontWeight: 800, color: 'var(--mm-text-1)', letterSpacing: '-.025em' }}>MealMatch</span>
           </Link>
           <h1 style={{ fontSize: '1.875rem', fontWeight: 800, letterSpacing: '-.04em', color: 'var(--mm-text-1)', marginBottom: 8 }}>
             Create your account

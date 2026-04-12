@@ -5,6 +5,58 @@ import { useAuth } from "../auth/useAuth";
 import MealMap from "./MealMap";
 import { Notification } from "./ui/Notification";
 
+const FOOD_VISUALS = [
+  {
+    key: "salad",
+    icon: "🥗",
+    label: "Fresh",
+    colors: ["#DCFCE7", "#86EFAC"],
+    keywords: ["salad", "vegan", "vegetarian", "greens", "produce", "fresh", "plant"],
+  },
+  {
+    key: "bakery",
+    icon: "🥐",
+    label: "Bakery",
+    colors: ["#FEF3C7", "#F59E0B"],
+    keywords: ["bread", "bakery", "pastry", "bagel", "croissant", "muffin"],
+  },
+  {
+    key: "meal",
+    icon: "🍱",
+    label: "Meal",
+    colors: ["#DBEAFE", "#60A5FA"],
+    keywords: ["rice", "bowl", "entree", "lunch", "dinner", "meal", "combo"],
+  },
+  {
+    key: "pizza",
+    icon: "🍕",
+    label: "Hot",
+    colors: ["#FEE2E2", "#F97316"],
+    keywords: ["pizza", "slice", "flatbread"],
+  },
+  {
+    key: "dessert",
+    icon: "🧁",
+    label: "Sweet",
+    colors: ["#FCE7F3", "#F472B6"],
+    keywords: ["dessert", "cake", "cookie", "sweet", "brownie", "donut"],
+  },
+  {
+    key: "soup",
+    icon: "🍜",
+    label: "Warm",
+    colors: ["#EDE9FE", "#8B5CF6"],
+    keywords: ["soup", "ramen", "noodle", "stew", "broth", "pasta"],
+  },
+  {
+    key: "fruit",
+    icon: "🍎",
+    label: "Fruit",
+    colors: ["#FEF9C3", "#FACC15"],
+    keywords: ["fruit", "apple", "banana", "orange", "berry", "snack"],
+  },
+];
+
 export default function RecipientFeed() {
   const { state: routeState } = useLocation();
   const mapRef = useRef(null);
@@ -117,34 +169,16 @@ export default function RecipientFeed() {
 
   const allTags = useMemo(() => {
     const tagSet = new Set();
-    listings.forEach((listing) => {
+    listings
+      .filter((listing) => listing.status === "active")
+      .forEach((listing) => {
       (listing.dietary_tags || []).forEach((tag) => tagSet.add(tag));
-    });
+      });
     return ["all", ...Array.from(tagSet)];
   }, [listings]);
 
-  const stats = useMemo(() => {
-    const activeListings = listings.filter((item) => item.status === "active");
-    const mealsAvailable = activeListings.reduce(
-      (sum, item) => sum + Number(item.quantity || 0),
-      0
-    );
-    const urgentPickups = activeListings.filter((item) => {
-      const mins = getMinutesLeft(item.pickup_end);
-      return mins > 0 && mins <= 30;
-    }).length;
-
-    return {
-      activeListings: activeListings.length,
-      mealsAvailable,
-      urgentPickups,
-    };
-  }, [listings]);
-
-  const filteredListings = useMemo(() => {
-    let result = [...listings];
-
-    result = result.filter((listing) => listing.status === "active");
+  const baseFilteredListings = useMemo(() => {
+    let result = listings.filter((listing) => listing.status === "active");
 
     if (searchTerm.trim()) {
       const query = searchTerm.toLowerCase();
@@ -162,17 +196,41 @@ export default function RecipientFeed() {
       });
     }
 
-    if (selectedTag !== "all") {
-      result = result.filter((listing) =>
-        (listing.dietary_tags || []).includes(selectedTag)
-      );
-    }
-
     if (showUrgentOnly) {
       result = result.filter((listing) => {
         const mins = getMinutesLeft(listing.pickup_end);
         return mins > 0 && mins <= 30;
       });
+    }
+
+    return result;
+  }, [listings, searchTerm, showUrgentOnly]);
+
+  const tagOptions = useMemo(() => {
+    const counts = new Map();
+
+    baseFilteredListings.forEach((listing) => {
+      (listing.dietary_tags || []).forEach((tag) => {
+        counts.set(tag, (counts.get(tag) || 0) + 1);
+      });
+    });
+
+    return allTags.map((tag) => ({
+      value: tag,
+      label:
+        tag === "all"
+          ? `All Dietary Tags (${baseFilteredListings.length})`
+          : `${formatTag(tag)} (${counts.get(tag) || 0})`,
+    }));
+  }, [allTags, baseFilteredListings]);
+
+  const filteredListings = useMemo(() => {
+    let result = [...baseFilteredListings];
+
+    if (selectedTag !== "all") {
+      result = result.filter((listing) =>
+        (listing.dietary_tags || []).includes(selectedTag)
+      );
     }
 
     result.sort((a, b) => {
@@ -195,7 +253,24 @@ export default function RecipientFeed() {
     });
 
     return result;
-  }, [listings, searchTerm, selectedTag, sortBy, showUrgentOnly]);
+  }, [baseFilteredListings, selectedTag, sortBy]);
+
+  const stats = useMemo(() => {
+    const mealsAvailable = filteredListings.reduce(
+      (sum, item) => sum + Number(item.quantity || 0),
+      0
+    );
+    const urgentPickups = filteredListings.filter((item) => {
+      const mins = getMinutesLeft(item.pickup_end);
+      return mins > 0 && mins <= 30;
+    }).length;
+
+    return {
+      activeListings: filteredListings.length,
+      mealsAvailable,
+      urgentPickups,
+    };
+  }, [filteredListings]);
 
   const showOnMap = useCallback((listing) => {
     setFocusedListingId(listing.id);
@@ -333,9 +408,9 @@ export default function RecipientFeed() {
             style={{ minHeight: 44 }}
             aria-label="Filter by dietary tag"
           >
-            {allTags.map((tag) => (
-              <option key={tag} value={tag}>
-                {tag === "all" ? "All dietary tags" : tag}
+            {tagOptions.map((tag) => (
+              <option key={tag.value} value={tag.value}>
+                {tag.label}
               </option>
             ))}
           </select>
@@ -456,14 +531,17 @@ export default function RecipientFeed() {
               <div key={listing.id} className="mm-card" style={s.listingCard}>
                 {/* Card top */}
                 <div style={s.cardTop}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={s.locationPill}>
-                      {listing.location_name || listing.address || "Nearby pickup"}
+                  <div style={s.cardPrimary}>
+                    <FoodThumbnail listing={listing} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={s.locationPill}>
+                        {listing.location_name || listing.address || "Nearby pickup"}
+                      </div>
+                      <h3 style={s.cardTitle}>{listing.title}</h3>
+                      <p style={s.cardDescription}>
+                        {listing.description || "Freshly posted listing."}
+                      </p>
                     </div>
-                    <h3 style={s.cardTitle}>{listing.title}</h3>
-                    <p style={s.cardDescription}>
-                      {listing.description || "Freshly posted listing."}
-                    </p>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
                     <span className={`mm-badge ${statusBadge}`}>{statusLabel}</span>
@@ -492,7 +570,7 @@ export default function RecipientFeed() {
                   {(listing.dietary_tags || []).length > 0 ? (
                     listing.dietary_tags.map((tag) => (
                       <span key={tag} className="mm-badge mm-badge-success" style={{ fontSize: 11 }}>
-                        {tag}
+                        {formatTag(tag)}
                       </span>
                     ))
                   ) : (
@@ -598,6 +676,41 @@ function MiniStat({ label, value }) {
   );
 }
 
+function FoodThumbnail({ listing }) {
+  const visual = getListingVisual(listing);
+
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        ...s.thumbnail,
+        background: `linear-gradient(145deg, ${visual.colors[0]} 0%, ${visual.colors[1]} 100%)`,
+      }}
+    >
+      <span style={{ ...s.thumbnailOrb, background: `${visual.colors[0]}CC` }} />
+      <span style={s.thumbnailIcon}>{visual.icon}</span>
+      <span style={s.thumbnailLabel}>{visual.label}</span>
+    </div>
+  );
+}
+
+function getListingVisual(listing) {
+  const searchableText = [
+    listing.title,
+    listing.description,
+    ...(listing.dietary_tags || []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    FOOD_VISUALS.find((visual) =>
+      visual.keywords.some((keyword) => searchableText.includes(keyword))
+    ) || FOOD_VISUALS[2]
+  );
+}
+
 function InfoBlock({ label, value }) {
   return (
     <div style={s.infoBlock}>
@@ -626,6 +739,14 @@ function formatMinutesLeft(minutes) {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
   return `${hours}h ${mins}m`;
+}
+
+function formatTag(tag) {
+  return String(tag || "")
+    .split(/[_-]/)
+    .filter(Boolean)
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 const s = {
@@ -778,11 +899,59 @@ const s = {
     gap: 14,
     padding: 22,
   },
+  cardPrimary: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 14,
+    flex: 1,
+    minWidth: 0,
+  },
   cardTop: {
     display: "flex",
     justifyContent: "space-between",
     gap: 14,
     alignItems: "flex-start",
+  },
+  thumbnail: {
+    width: 84,
+    minWidth: 84,
+    height: 84,
+    borderRadius: 20,
+    position: "relative",
+    overflow: "hidden",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,.45)",
+  },
+  thumbnailOrb: {
+    position: "absolute",
+    width: 58,
+    height: 58,
+    borderRadius: "50%",
+    top: -10,
+    right: -8,
+    filter: "blur(2px)",
+  },
+  thumbnailIcon: {
+    fontSize: 32,
+    lineHeight: 1,
+    transform: "translateY(-4px)",
+  },
+  thumbnailLabel: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    bottom: 8,
+    padding: "4px 0",
+    borderRadius: "var(--mm-r-full)",
+    background: "rgba(255,255,255,.78)",
+    color: "#1F2937",
+    fontSize: 10,
+    fontWeight: 800,
+    textAlign: "center",
+    textTransform: "uppercase",
+    letterSpacing: ".08em",
   },
   locationPill: {
     display: "inline-flex",

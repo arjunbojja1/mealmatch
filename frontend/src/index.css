@@ -78,7 +78,8 @@
 
   /* Layout */
   --mm-max-w:    1280px;
-  --mm-header-h: 60px;
+  --mm-header-h: 78px;
+  --mm-header-logo-h: 64px;
 
   font-family: var(--mm-font);
   font-size: 16px;
@@ -313,7 +314,7 @@ img, svg { display: block; }
   border-radius: var(--mm-r-md);
   border: none;
   background: transparent;
-  color: var(--mm-text-3);
+  color: rgba(241,245,249,.82);
   font-size: .875rem;
   font-weight: 500;
   cursor: pointer;
@@ -321,7 +322,7 @@ img, svg { display: block; }
   transition: background var(--mm-dur), color var(--mm-dur);
   letter-spacing: -.01em;
 }
-.mm-nav-tab:hover { background: rgba(0,0,0,.05); color: var(--mm-text-2); }
+.mm-nav-tab:hover { background: rgba(255,255,255,.08); color: #FFFFFF; }
 .mm-nav-tab-active {
   background: var(--mm-brand-dim) !important;
   color: var(--mm-brand) !important;
@@ -791,29 +792,38 @@ a.mm-link:hover { opacity: .75; }
 .mm-home-nav {
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 200;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  background: rgba(255,255,255,.85);
+  background: rgba(0,0,0,.96);
   border-bottom: 1px solid var(--mm-border);
+  box-shadow: 0 1px 0 var(--mm-border);
 }
 
 .mm-home-nav-inner {
-  max-width: 1240px;
+  max-width: var(--mm-max-w);
   margin: 0 auto;
-  padding: 0 28px;
-  height: 64px;
+  padding: 0 20px;
+  height: var(--mm-header-h);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
 }
 
-.mm-home-brand-link { text-decoration: none; display: flex; align-items: center; gap: 12px; }
-.mm-home-brand-logo { height: 40px; border-radius: 9px; }
-.mm-home-brand-name { font-size: 18px; font-weight: 800; color: var(--mm-text-1); letter-spacing: -.025em; }
+.mm-home-brand-link {
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 6px;
+  border-radius: var(--mm-r-md);
+}
 
-.mm-home-main { max-width: 1240px; margin: 0 auto; padding: 0 28px 80px; }
+.mm-home-brand-logo { height: var(--mm-header-logo-h); border-radius: 12px; }
+.mm-home-brand-name { font-size: 18px; font-weight: 800; color: #F8FAFC; letter-spacing: -.025em; }
+
+.mm-home-main { max-width: var(--mm-max-w); margin: 0 auto; padding: 0 20px 80px; }
 
 .mm-hero-grid {
   display: grid;
