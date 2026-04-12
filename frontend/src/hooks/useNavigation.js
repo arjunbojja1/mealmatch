@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { getRouteModeSummaries } from '../api/client'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -11,6 +12,7 @@ export const OSRM_PROFILE = {
   cycling: 'cycling',
   transit: 'walking',
 }
+const NAV_MODE_KEYS = ['driving', 'walking', 'bicycling', 'transit']
 
 export const STEP_ADVANCE_M = 30
 export const REROUTE_M = 200
@@ -136,6 +138,8 @@ export function stepText(step) {
 
 export function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart }) {
   const mountedRef            = useRef(true)
+  const routeRequestSeqRef    = useRef(0)
+  const modeSummarySeqRef     = useRef(0)
   const watchIdRef            = useRef(null)
   const navTargetRef          = useRef(null)
   const navModeRef            = useRef('driving')
@@ -160,6 +164,8 @@ export function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart
   const [navError,     setNavError]     = useState(null)
   const [followUser,   setFollowUser]   = useState(false)
   const [navMode,      setNavMode]      = useState('driving')
+  const [modeSummaries, setModeSummaries] = useState({})
+  const [modeSummariesLoading, setModeSummariesLoading] = useState(false)
   const [rerouting,    setRerouting]    = useState(false)
   const [rollingSpeed, setRollingSpeed] = useState(null) // m/s; null when stopped
 
@@ -224,8 +230,49 @@ export function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart
     }
   }, [followUser, userLoc, mapReady, logMapError, mapRef])
 
+  // ── fetchModeSummaries ─────────────────────────────────────────────────────
+  // Fetch real route distance/duration for each mode via backend proxy.
+  const fetchModeSummaries = useCallback(async (listing, fromLoc) => {
+    const destLoc = safeLocation(listing)
+    if (!destLoc || !validCoord(fromLoc?.lat, fromLoc?.lng)) return
+
+    const requestSeq = ++modeSummarySeqRef.current
+    if (mountedRef.current) setModeSummariesLoading(true)
+
+    try {
+      const data = await getRouteModeSummaries(
+        { lat: fromLoc.lat, lng: fromLoc.lng },
+        { lat: destLoc.lat, lng: destLoc.lng },
+      )
+      if (!mountedRef.current || requestSeq !== modeSummarySeqRef.current) return
+
+      const normalized = NAV_MODE_KEYS.reduce((acc, mode) => {
+        const entry = data?.[mode]
+        const distance = Number(entry?.distance)
+        const duration = Number(entry?.duration)
+        if (Number.isFinite(distance) && Number.isFinite(duration)) {
+          acc[mode] = { distance, duration }
+        }
+        return acc
+      }, {})
+
+      setModeSummaries(normalized)
+      setModeSummariesLoading(false)
+    } catch (e) {
+      if (!mountedRef.current || requestSeq !== modeSummarySeqRef.current) return
+      logMapError('Mode summary route fetch failed', {
+        action: 'fetch_mode_summary',
+        listing_id: listing?.id || null,
+        error: String(e?.message || e),
+      }, 'warn', 'MAP_MODE_SUMMARY_FETCH_FAILED')
+      setModeSummariesLoading(false)
+    }
+  }, [logMapError])
+
   // ── fetchRoute ──────────────────────────────────────────────────────────────
   const fetchRoute = useCallback(async (listing, fromLoc, mode) => {
+    const requestSeq = ++routeRequestSeqRef.current
+
     const destLoc = safeLocation(listing)
     if (!destLoc) {
       if (mountedRef.current) setNavError('Destination has no valid coordinates.')
@@ -271,6 +318,9 @@ export function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart
           Number.isFinite(Number(pt[1])),
       )
 
+      // Ignore stale responses (e.g. rapid mode-switch or reroute overlap).
+      if (requestSeq !== routeRequestSeqRef.current) return
+
       if (mountedRef.current) {
         setRouteCoords(coords)
         routeCoordsRef.current = coords
@@ -281,6 +331,7 @@ export function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart
         setNavError(null)
       }
     } catch (e) {
+      if (requestSeq !== routeRequestSeqRef.current) return
       if (mountedRef.current) setNavError(`Could not calculate a route. ${e.message}`)
       logMapError('Route calculation failed', {
         action: 'fetch_route',
@@ -290,6 +341,13 @@ export function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart
       }, 'error', 'MAP_ROUTE_FETCH_FAILED')
     }
   }, [logMapError])
+
+  // Prefer real per-mode summary metrics when available.
+  useEffect(() => {
+    const summary = modeSummaries?.[navMode]
+    if (!summary) return
+    setNavSummary(summary)
+  }, [modeSummaries, navMode])
 
   // ── startNavigation ─────────────────────────────────────────────────────────
   const startNavigation = useCallback(
@@ -337,6 +395,9 @@ export function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart
       setNavSummary(null)
       setStepIdx(0)
       setFollowUser(false)
+      modeSummarySeqRef.current += 1
+      setModeSummaries({})
+      setModeSummariesLoading(false)
       setRerouting(false)
       setRollingSpeed(null)
 
@@ -386,6 +447,7 @@ export function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart
       lastRecalcLocRef.current = ul
       lastLocRef.current = ul
       lastLocTimeRef.current = Date.now()
+      fetchModeSummaries(listing, ul)
 
       if (mapRef.current && mapReady) {
         try {
@@ -466,6 +528,7 @@ export function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart
                   setRerouting(false)
                 }
               })
+              fetchModeSummaries(navTargetRef.current, loc)
             }
           }
         },
@@ -479,7 +542,7 @@ export function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart
         { enableHighAccuracy: true, maximumAge: 2000 },
       )
     },
-    [fetchRoute, mapReady, logMapError, onNavigationStart, mapRef],
+    [fetchRoute, fetchModeSummaries, mapReady, logMapError, onNavigationStart, mapRef],
   )
 
   // ── clearNav ────────────────────────────────────────────────────────────────
@@ -501,23 +564,29 @@ export function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart
     setNavError(null)
     setNavLoading(false)
     setFollowUser(false)
+    modeSummarySeqRef.current += 1
+    setModeSummaries({})
+    setModeSummariesLoading(false)
     setRerouting(false)
     setRollingSpeed(null)
+    routeRequestSeqRef.current += 1
   }, [])
 
   // ── changeMode ──────────────────────────────────────────────────────────────
   // Immediately clears stale route data so the panel shows "Calculating..."
   // Uses a ref-based lock to guard against concurrent calls (not just navLoading state).
   const changeMode = useCallback(async (newMode) => {
-    if (newMode === navMode || changeModeInFlightRef.current) return
+    if (newMode === navModeRef.current || changeModeInFlightRef.current) return
     changeModeInFlightRef.current = true
     setNavMode(newMode)
     navModeRef.current = newMode  // raw key; fetchRoute handles OSRM translation
     // Clear stale data immediately
     setNavSteps([])
+    navStepsRef.current = []
     setStepIdx(0)
     setNavSummary(null)
     setRouteCoords([])
+    routeCoordsRef.current = []
     setNavError(null)
     setRollingSpeed(null)
     speedSamplesRef.current = []
@@ -528,9 +597,10 @@ export function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart
     fitDoneRef.current = false
     setNavLoading(true)
     await fetchRoute(navTarget, userLoc, newMode)
+    fetchModeSummaries(navTarget, userLoc)
     if (mountedRef.current) setNavLoading(false)
     changeModeInFlightRef.current = false
-  }, [navMode, navTarget, userLoc, fetchRoute])
+  }, [navTarget, userLoc, fetchModeSummaries, fetchRoute])
 
   // ── handleRecenter ──────────────────────────────────────────────────────────
   const handleRecenter = useCallback(() => {
@@ -570,20 +640,32 @@ export function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart
         : navTargetLoc && userLoc
           ? haversine(userLoc.lat, userLoc.lng, navTargetLoc.lat, navTargetLoc.lng)
           : (navSteps[stepIdx]?.distance ?? 0)
-    return (
+    const osrmRemaining = (
       distToNextTurn +
       navSteps.slice(stepIdx + 1).reduce((s, st) => s + (st?.distance ?? 0), 0)
     )
-  }, [navSteps, stepIdx, userLoc, navTargetLoc])
+    const osrmTotal = navSteps.reduce((s, st) => s + (st?.distance ?? 0), 0)
+    if (navSummary?.distance > 0 && osrmTotal > 0) {
+      const ratio = Math.max(0, Math.min(1, osrmRemaining / osrmTotal))
+      return navSummary.distance * ratio
+    }
+    return osrmRemaining
+  }, [navSteps, stepIdx, userLoc, navTargetLoc, navSummary])
 
-  // etaSecs: speed-based when rollingSpeed is available, proportional OSRM fallback otherwise
+  // etaSecs: driving/transit should stick to profile ETA to avoid GPS-speed drift.
+  // Use live speed only for human-powered modes where it closely matches travel mode.
   const etaSecs = useMemo(() => {
-    if (rollingSpeed !== null && rollingSpeed >= 0.5 && distRemaining > 0) {
+    if (
+      (navMode === 'walking' || navMode === 'bicycling') &&
+      rollingSpeed !== null &&
+      rollingSpeed >= 0.5 &&
+      distRemaining > 0
+    ) {
       return distRemaining / rollingSpeed
     }
     if (!navSummary) return null
     return navSummary.duration * (distRemaining / Math.max(navSummary.distance, 1))
-  }, [rollingSpeed, distRemaining, navSummary])
+  }, [navMode, rollingSpeed, distRemaining, navSummary])
 
   const arrived = useMemo(
     () =>
@@ -600,6 +682,8 @@ export function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart
     stepIdx,
     routeCoords,
     summary: navSummary,
+    modeSummaries,
+    modeSummariesLoading,
     userLoc,
     distRemaining,
     etaSecs,

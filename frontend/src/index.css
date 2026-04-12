@@ -451,6 +451,8 @@ img, svg { display: block; }
 @keyframes mm-slide-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
 @keyframes mm-pulse    { 0% { transform: scale(0.8); opacity: 0.8; } 70% { transform: scale(2.2); opacity: 0; } 100% { transform: scale(2.2); opacity: 0; } }
 @keyframes mm-grow-in  { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes mm-home-enter-rise { from { opacity: 0; transform: translateY(16px) scale(.992); } to { opacity: 1; transform: none; } }
+@keyframes mm-home-enter-nav { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: none; } }
 
 /* ── Typography scale ───────────────────────────────────────── */
 .mm-display { font-size: clamp(2.8rem, 6vw, 5rem);     font-weight: 900; letter-spacing: -.05em; line-height: .96; color: var(--mm-text-1); }
@@ -787,6 +789,32 @@ a.mm-link:hover { opacity: .75; }
   min-height: 100svh;
   color: var(--mm-text-1);
   background: var(--mm-bg);
+}
+
+.mm-home-enter .mm-home-enter-item {
+  opacity: 0;
+  transform: translateY(16px) scale(.992);
+  animation: mm-home-enter-rise .56s var(--mm-ease) both;
+}
+
+.mm-home-enter .mm-home-nav.mm-home-enter-item {
+  transform: translateY(-12px);
+  animation-name: mm-home-enter-nav;
+}
+
+.mm-home-enter .mm-home-enter-1 { animation-delay: 40ms; }
+.mm-home-enter .mm-home-enter-2 { animation-delay: 120ms; }
+.mm-home-enter .mm-home-enter-3 { animation-delay: 190ms; }
+.mm-home-enter .mm-home-enter-4 { animation-delay: 270ms; }
+.mm-home-enter .mm-home-enter-5 { animation-delay: 340ms; }
+.mm-home-enter .mm-home-enter-6 { animation-delay: 420ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-home-enter .mm-home-enter-item {
+    opacity: 1;
+    transform: none;
+    animation: none;
+  }
 }
 
 .mm-home-nav {

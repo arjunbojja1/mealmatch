@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl'
+import Map, { Marker, Popup, Source, Layer, NavigationControl } from 'react-map-gl/maplibre'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { reportMapError } from '../api/client'
@@ -108,6 +108,8 @@ const MealMap = forwardRef(function MealMap(
     stepIdx,
     routeCoords,
     userLoc,
+    modeSummaries,
+    modeSummariesLoading,
     distRemaining,
     etaSecs,
     loading: navLoading,
@@ -179,6 +181,8 @@ const MealMap = forwardRef(function MealMap(
 
   const focusedListing = focusedId ? listings.find((l) => l.id === focusedId) : null
   const popupListing   = popupId   ? withCoords.find((l) => l.id === popupId) : null
+  const canClaimPopupListing =
+    popupListing && (popupListing.status == null || popupListing.status === 'active')
   const focusedMissingCoords =
     focusedListing != null && !withCoords.some((l) => l.id === focusedId)
 
@@ -216,7 +220,16 @@ const MealMap = forwardRef(function MealMap(
 
           {/* Transport mode selector */}
           <div style={s.modeRow}>
-            {NAV_MODES_MAP.map((m) => (
+            {NAV_MODES_MAP.map((m) => {
+              const estimate = modeSummaries?.[m.key] || null
+              const estimateDuration = estimate
+                ? formatDuration(estimate.duration)
+                : modeSummariesLoading
+                  ? '…'
+                  : '—'
+              const estimateDistance = estimate ? formatDist(estimate.distance) : null
+
+              return (
               <button
                 key={m.key}
                 style={{ ...s.modeBtn, ...(navMode === m.key ? s.modeBtnActive : {}) }}
@@ -225,9 +238,14 @@ const MealMap = forwardRef(function MealMap(
                 title={m.label}
                 disabled={navLoading}
               >
-                {m.icon}
+                <span style={s.modeIcon}>{m.icon}</span>
+                <span style={s.modeMeta}>
+                  <span>{estimateDuration}</span>
+                  {estimateDistance && <span>{estimateDistance}</span>}
+                </span>
               </button>
-            ))}
+              )
+            })}
           </div>
 
           {/* Transit fallback notice */}
@@ -421,7 +439,7 @@ const MealMap = forwardRef(function MealMap(
                 {popupListing.address ? ` · ${popupListing.address}` : ''}
               </div>
               <div style={s.popupActions}>
-                {onClaim && (
+                {onClaim && canClaimPopupListing && (
                   <button
                     onClick={() => onClaim(popupListing)}
                     disabled={claimingIds.has(popupListing.id)}
@@ -698,14 +716,28 @@ const s = {
   },
   modeBtn: {
     flex: 1,
-    padding: '6px 0',
+    padding: '6px 4px',
     borderRadius: 10,
     border: '1px solid rgba(255,255,255,0.10)',
     background: 'rgba(255,255,255,0.04)',
     color: '#71717a',
-    fontSize: 16,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 2,
     cursor: 'pointer',
     transition: 'background 0.15s, border-color 0.15s',
+  },
+  modeIcon: { fontSize: 16, lineHeight: 1 },
+  modeMeta: {
+    fontSize: 9,
+    fontWeight: 600,
+    lineHeight: 1.15,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 1,
+    opacity: 0.9,
   },
   modeBtnActive: {
     background: 'rgba(59,130,246,0.18)',

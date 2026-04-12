@@ -64,9 +64,9 @@ export default function HomePage() {
   const primaryLabel = isAuthenticated ? 'Open Dashboard' : 'Get Started Free'
 
   return (
-    <div className="mm-home-page">
+    <div className="mm-home-page mm-home-enter">
       {/* ── Nav ─────────────────────────────────────────────────────────── */}
-      <header className="mm-home-nav">
+      <header className="mm-home-nav mm-home-enter-item mm-home-enter-1">
         <div className="mm-home-nav-inner">
           <Link to="/" className="mm-home-brand-link" aria-label="MealMatch home">
             <img src="/MealMatch Logo.png" alt="" className="mm-home-brand-logo" />
@@ -94,7 +94,7 @@ export default function HomePage() {
       <main className="mm-home-main">
         {/* ── Hero ──────────────────────────────────────────────────────── */}
         <section className="mm-hero-grid">
-          <div className="mm-hero-copy">
+          <div className="mm-hero-copy mm-home-enter-item mm-home-enter-2">
             <div className="mm-hero-kicker">
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#16A34A', display: 'inline-block', animation: 'mm-pulse 2s infinite' }} />
               Live food recovery network
@@ -123,7 +123,7 @@ export default function HomePage() {
           </div>
 
           {/* How it works panel */}
-          <div className="mm-hero-panel">
+          <div className="mm-hero-panel mm-home-enter-item mm-home-enter-3">
             <p className="mm-hero-panel-title">How it works</p>
             {HOW_IT_WORKS.map((step) => (
               <div key={step.num} className="mm-hero-step">
@@ -143,7 +143,7 @@ export default function HomePage() {
         </section>
 
         {/* ── Mission pillars ───────────────────────────────────────────── */}
-        <section className="mm-home-section">
+        <section className="mm-home-section mm-home-enter-item mm-home-enter-4">
           <div className="mm-home-section-intro">
             <p style={{ fontSize: '.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.12em', color: 'var(--mm-brand)', margin: '0 0 10px' }}>
               Why it matters
@@ -170,7 +170,7 @@ export default function HomePage() {
         </section>
 
         {/* ── Audience ──────────────────────────────────────────────────── */}
-        <section className="mm-home-section" style={{ paddingBottom: 0 }}>
+        <section className="mm-home-section mm-home-enter-item mm-home-enter-5" style={{ paddingBottom: 0 }}>
           <div className="mm-home-section-intro">
             <p style={{ fontSize: '.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.12em', color: 'var(--mm-info)', margin: '0 0 10px' }}>
               Who uses MealMatch
@@ -192,7 +192,7 @@ export default function HomePage() {
 
         {/* ── CTA footer ────────────────────────────────────────────────── */}
         {!isAuthenticated && (
-          <section style={{ padding: '56px 0 0', textAlign: 'center' }}>
+          <section className="mm-home-enter-item mm-home-enter-6" style={{ padding: '56px 0 0', textAlign: 'center' }}>
             <div style={{
               display: 'inline-flex', flexDirection: 'column', alignItems: 'center',
               gap: 20, padding: '48px 52px',

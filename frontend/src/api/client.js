@@ -233,3 +233,8 @@ export function getMyClaims() {
 export function cancelClaim(claimId) {
   return del(`/api/v1/claims/${claimId}`)
 }
+
+// Routing mode summaries (server-side proxy to avoid browser CORS/rate-limit issues)
+export function getRouteModeSummaries(origin, destination) {
+  return post('/api/v1/routes/mode-summaries', { origin, destination })
+}

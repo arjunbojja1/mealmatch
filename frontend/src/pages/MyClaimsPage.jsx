@@ -56,7 +56,13 @@ export default function MyClaimsPage() {
 
   const handleShowOnMap = useCallback((listing) => {
     if (!listing) return
-    navigate('/browse', { state: { focusListingId: listing.id } })
+    navigate('/browse', {
+      state: {
+        focusListingId: listing.id,
+        focusListing: listing,
+        source: 'my-claims',
+      },
+    })
   }, [navigate])
 
   const handleNavigate = useCallback((listing, mode) => {
@@ -65,6 +71,7 @@ export default function MyClaimsPage() {
     navigate('/browse', {
       state: {
         focusListingId: listing.id,
+        focusListing: listing,
         autoNav: true,
         navMode: mode,
         source: 'my-claims',

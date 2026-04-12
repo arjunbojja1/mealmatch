@@ -12,23 +12,26 @@ import { formatDietaryTagWithIcon as formatTagWithIcon } from "../utils/dietaryT
 export default function RecipientFeed() {
   const { state: routeState } = useLocation();
   const mapRef = useRef(null);
+  const routeFocusedListing = routeState?.focusListing || null;
+  const initialFocusedListingId =
+    routeState?.focusListingId || routeFocusedListing?.id || null;
   const [listings, setListings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [claimingIds, setClaimingIds] = useState(new Set());
-  const [viewMode, setViewMode] = useState(routeState?.focusListingId ? "map" : "list");
-  const [focusedListingId, setFocusedListingId] = useState(routeState?.focusListingId || null);
+  const [viewMode, setViewMode] = useState(initialFocusedListingId ? "map" : "list");
+  const [focusedListingId, setFocusedListingId] = useState(initialFocusedListingId);
   const [pendingNav] = useState(
     routeState?.autoNav ? { navMode: routeState.navMode || "driving" } : null
   );
   const pendingNavFiredRef = useRef(false);
   const [mapMounted, setMapMounted] = useState(
-    routeState?.focusListingId ? true : false
+    initialFocusedListingId ? true : false
   );
   // While true, we withhold focusedId from MealMap to prevent popup from flashing
   // open during the ~300ms window before startNavigation fires.
   const [navIntentActive, setNavIntentActive] = useState(
-    !!(routeState?.autoNav && routeState?.focusListingId)
+    !!(routeState?.autoNav && initialFocusedListingId)
   );
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTag, setSelectedTag] = useState("all");
@@ -66,9 +69,11 @@ export default function RecipientFeed() {
   // navIntentActive is cleared AFTER startNavigation resolves so focusedId is never
   // briefly un-suppressed before MealMap's navTarget guard is in place.
   useEffect(() => {
-    if (!pendingNav || !focusedListingId || isLoading || !listings.length) return;
+    if (!pendingNav || !focusedListingId || isLoading) return;
     if (pendingNavFiredRef.current) return;
-    const listing = listings.find((l) => l.id === focusedListingId);
+    const listing =
+      listings.find((l) => l.id === focusedListingId) ||
+      (routeFocusedListing?.id === focusedListingId ? routeFocusedListing : null);
     if (!listing?.location) return;
     pendingNavFiredRef.current = true;
 
@@ -94,7 +99,7 @@ export default function RecipientFeed() {
     }, 400);
 
     return () => { cancelled = true; clearTimeout(t); };
-  }, [pendingNav, focusedListingId, listings, isLoading]);
+  }, [pendingNav, focusedListingId, listings, isLoading, routeFocusedListing]);
 
   // Pre-populate justClaimedIds from My Claims so returning users see "Claimed" state
   useEffect(() => {
@@ -206,6 +211,20 @@ export default function RecipientFeed() {
 
     return result;
   }, [baseFilteredListings, selectedTag, sortBy]);
+
+  const focusedRouteListing = useMemo(() => {
+    if (!routeFocusedListing || !focusedListingId) return null;
+    if (routeFocusedListing.id !== focusedListingId) return null;
+    return routeFocusedListing;
+  }, [routeFocusedListing, focusedListingId]);
+
+  const mapListings = useMemo(() => {
+    if (!focusedRouteListing) return filteredListings;
+    if (filteredListings.some((listing) => listing.id === focusedRouteListing.id)) {
+      return filteredListings;
+    }
+    return [focusedRouteListing, ...filteredListings];
+  }, [filteredListings, focusedRouteListing]);
 
   const stats = useMemo(() => {
     const mealsAvailable = filteredListings.reduce(
@@ -443,7 +462,7 @@ export default function RecipientFeed() {
         <div style={{ ...s.mapShell, display: viewMode === "map" ? undefined : "none" }}>
           <MealMap
             ref={mapRef}
-            listings={filteredListings}
+            listings={mapListings}
             focusedId={navIntentActive ? null : focusedListingId}
             onListingClick={(l) => setFocusedListingId(l.id)}
             onClaim={handleClaim}
