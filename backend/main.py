@@ -689,7 +689,7 @@ class Claim(BaseModel):
 
 
 class ListingCreate(BaseModel):
-    restaurant_id: str
+    restaurant_id_override: str | None = None  # admin-only: post on behalf of a specific restaurant
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=1000)
     quantity: int = Field(gt=0)
@@ -705,13 +705,11 @@ class ListingCreate(BaseModel):
 
 
 class ClaimCreate(BaseModel):
-    user_id: str
     claimed_quantity: int = Field(gt=0)
     slot_id: str | None = None
 
 
 class BulkClaimCreate(BaseModel):
-    user_id: str
     claimed_quantity: int = Field(gt=0, le=MAX_BULK_CLAIM_QUANTITY)
     slot_id: str | None = None
     group_name: str = Field(default="", max_length=100)
@@ -995,7 +993,11 @@ def create_listing(
     )
     listing = Listing(
         id=str(uuid4()),
-        restaurant_id=payload.restaurant_id,
+        restaurant_id=(
+            payload.restaurant_id_override
+            if current_user.role == "admin" and payload.restaurant_id_override
+            else current_user.id
+        ),
         title=payload.title,
         description=payload.description,
         quantity=payload.quantity,
@@ -1051,7 +1053,7 @@ def claim_listing(
             )
 
         already_claimed = any(
-            c.user_id == payload.user_id and c.listing_id == listing_id and c.status == "confirmed"
+            c.user_id == current_user.id and c.listing_id == listing_id and c.status == "confirmed"
             for c in claims.values()
         )
         if already_claimed:
@@ -1077,7 +1079,7 @@ def claim_listing(
         claim = Claim(
             id=str(uuid4()),
             listing_id=listing_id,
-            user_id=payload.user_id,
+            user_id=current_user.id,
             claimed_quantity=payload.claimed_quantity,
             claimed_at=datetime.now(timezone.utc),
             status="confirmed",
@@ -1116,7 +1118,7 @@ def bulk_claim_listing(
                         "message": f"Listing cannot be claimed — current status: '{listing.status.value}'"},
             )
         already_claimed = any(
-            c.user_id == payload.user_id and c.listing_id == listing_id and c.status == "confirmed"
+            c.user_id == current_user.id and c.listing_id == listing_id and c.status == "confirmed"
             for c in claims.values()
         )
         if already_claimed:
@@ -1135,7 +1137,7 @@ def bulk_claim_listing(
         claim = Claim(
             id=str(uuid4()),
             listing_id=listing_id,
-            user_id=payload.user_id,
+            user_id=current_user.id,
             claimed_quantity=payload.claimed_quantity,
             claimed_at=datetime.now(timezone.utc),
             status="confirmed",

@@ -257,13 +257,6 @@ class TestCreateListing:
         assert res.status_code == 422
         assert res.json()["error"]["code"] == "VALIDATION_ERROR"
 
-    def test_missing_restaurant_id_rejected(self):
-        payload = self._payload()
-        del payload["restaurant_id"]
-        res = client.post("/api/v1/listings", json=payload)
-        assert res.status_code == 422
-        assert res.json()["error"]["code"] == "VALIDATION_ERROR"
-
     def test_empty_title_rejected(self):
         res = client.post("/api/v1/listings", json=self._payload(title=""))
         assert res.status_code == 422
@@ -317,7 +310,7 @@ class TestClaimFlow:
         assert len(claims) == 1
         claim = list(claims.values())[0]
         assert claim.listing_id == "t1"
-        assert claim.user_id == "u1"
+        assert claim.user_id == "admin-001"
         assert claim.claimed_quantity == 2
         assert claim.status == "confirmed"
 
@@ -329,7 +322,7 @@ class TestClaimFlow:
         claim_list = res.json()["data"]
         assert len(claim_list) == 1
         assert claim_list[0]["listing_id"] == "t1"
-        assert claim_list[0]["user_id"] == "u1"
+        assert claim_list[0]["user_id"] == "admin-001"
         assert claim_list[0]["claimed_quantity"] == 2
 
     def test_first_claim_locks_listing_for_other_users(self):
