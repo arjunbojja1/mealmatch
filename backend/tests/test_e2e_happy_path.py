@@ -84,10 +84,10 @@ class TestE2EHappyPath:
         assert stats["claimed_listings"] == 1
         assert stats["total_claims"] == 1
 
-        # 8. Claims endpoint — only user-a's claim
+        # 8. Claims endpoint — claim user_id comes from JWT (mock_admin_auth → "admin-001")
         claim_records = client.get("/api/v1/claims").json()["data"]
         assert len(claim_records) == 1
-        assert claim_records[0]["user_id"] == "user-a"
+        assert claim_records[0]["user_id"] == "admin-001"
 
     def test_create_then_admin_expire_then_verify(self):
         now = _now()

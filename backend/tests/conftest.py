@@ -14,6 +14,12 @@ test_auth.py deliberately omits that mark so it tests the real auth flow.
 import sys
 import os
 
+# Redirect the listings DB to a temp file so tests never pollute the
+# production mealmatch_listings.db file.
+import tempfile as _tempfile
+_TEST_DB = _tempfile.mktemp(suffix="_mealmatch_test.db")
+os.environ["LISTINGS_DB_PATH"] = _TEST_DB
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest

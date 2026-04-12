@@ -809,7 +809,7 @@ claims: dict[str, Claim] = {}
 
 
 def _seed_listings() -> None:
-    """Seed demo listings idempotently — skips IDs already in memory."""
+    """Seed demo listings — always refreshes timestamps so seeds are never stale after restart."""
     _now = datetime.now(timezone.utc)
 
     def _future(hours: float) -> datetime:
@@ -821,7 +821,7 @@ def _seed_listings() -> None:
             title="Terp Tacos — Beef & Chicken",
             description="End-of-night surplus from our taco bar: seasoned beef, grilled chicken, salsa, tortillas. ~35 portions.",
             quantity=35, dietary_tags=["halal", "gluten"],
-            pickup_start=_future(0.5), pickup_end=_future(2),
+            pickup_start=_future(0.25), pickup_end=_future(6),
             status=ListingStatus.active, created_at=_now,
             address="7777 Baltimore Ave, College Park, MD 20740",
             location_name="Terp Taqueria", lat=38.9807, lng=-76.9369,
@@ -831,7 +831,7 @@ def _seed_listings() -> None:
             title="UMD Dining Hall Soup & Bread",
             description="Minestrone soup and assorted dinner rolls from South Campus Dining. 40 servings.",
             quantity=40, dietary_tags=["vegetarian", "contains_dairy"],
-            pickup_start=_future(1), pickup_end=_future(3),
+            pickup_start=_future(0.5), pickup_end=_future(8),
             status=ListingStatus.active, created_at=_now,
             address="3150 S Campus Dining Hall Dr, College Park, MD 20742",
             location_name="South Campus Dining", lat=38.9836, lng=-76.9446,
@@ -841,7 +841,7 @@ def _seed_listings() -> None:
             title="Halal Lamb Over Rice",
             description="Street-style halal lamb and white rice with white sauce. 18 portions left.",
             quantity=18, dietary_tags=["halal", "gluten-free"],
-            pickup_start=_future(0.25), pickup_end=_future(1.75),
+            pickup_start=_future(0.25), pickup_end=_future(4),
             status=ListingStatus.active, created_at=_now,
             address="8001 Baltimore Ave, College Park, MD 20740",
             location_name="Halal Cart at Route 1", lat=38.9815, lng=-76.9372,
@@ -851,7 +851,7 @@ def _seed_listings() -> None:
             title="Vegan Wraps & Smoothies",
             description="Leftover veggie wraps and unsold fruit smoothies from the market. 22 items.",
             quantity=22, dietary_tags=["vegan", "gluten-free", "nut-free"],
-            pickup_start=_future(0.5), pickup_end=_future(2),
+            pickup_start=_future(0.5), pickup_end=_future(6),
             status=ListingStatus.active, created_at=_now,
             address="7401 Baltimore Ave, College Park, MD 20740",
             location_name="The Greens Market", lat=38.9776, lng=-76.9361,
@@ -861,7 +861,7 @@ def _seed_listings() -> None:
             title="Korean BBQ Rice Bowls",
             description="Bulgogi and bibimbap bowls from today's lunch special. 14 portions remaining.",
             quantity=14, dietary_tags=["gluten"],
-            pickup_start=_future(1.5), pickup_end=_future(3),
+            pickup_start=_future(1), pickup_end=_future(8),
             status=ListingStatus.active, created_at=_now,
             address="8051 Baltimore Ave, College Park, MD 20740",
             location_name="Seoul Kitchen CP", lat=38.9821, lng=-76.9376,
@@ -871,7 +871,7 @@ def _seed_listings() -> None:
             title="Grilled Salmon & Roasted Vegetables",
             description="Atlantic salmon fillets with seasonal roasted vegetables from tonight's service.",
             quantity=16, dietary_tags=["gluten-free", "dairy-free"],
-            pickup_start=_future(1), pickup_end=_future(3),
+            pickup_start=_future(0.5), pickup_end=_future(6),
             status=ListingStatus.active, created_at=_now,
             address="1250 H St NE, Washington, DC 20002",
             location_name="H Street Grille", lat=38.8997, lng=-76.9880,
@@ -881,7 +881,7 @@ def _seed_listings() -> None:
             title="Ethiopian Combo Platter",
             description="Injera with lentil stew, collard greens, and spiced chickpeas. 20 portions.",
             quantity=20, dietary_tags=["vegan", "gluten-free", "halal"],
-            pickup_start=_future(0.5), pickup_end=_future(2),
+            pickup_start=_future(0.25), pickup_end=_future(5),
             status=ListingStatus.active, created_at=_now,
             address="910 U St NW, Washington, DC 20001",
             location_name="Addis Ethiopian", lat=38.9171, lng=-77.0289,
@@ -891,16 +891,16 @@ def _seed_listings() -> None:
             title="Dim Sum Assortment",
             description="Har gow, siu mai, and BBQ pork buns. 30 portions from weekend brunch.",
             quantity=30, dietary_tags=["gluten", "contains_dairy"],
-            pickup_start=_future(0.75), pickup_end=_future(2.5),
+            pickup_start=_future(0.5), pickup_end=_future(7),
             status=ListingStatus.active, created_at=_now,
             address="6th & H St NW, Washington, DC 20001",
             location_name="China Garden DC", lat=38.9007, lng=-77.0180,
         ),
     ]
     for seed in _seeds:
-        if seed.id not in listings:
-            listings[seed.id] = seed
-            _persist_listing(seed)
+        # Always update in-memory and SQLite — keeps pickup windows fresh after restart
+        listings[seed.id] = seed
+        _persist_listing(seed)
 
 
 # ---------------------------------------------------------------------------
