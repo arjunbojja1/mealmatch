@@ -25,6 +25,10 @@ from typing import Literal
 from uuid import uuid4
 import threading
 import logging
+import json
+import time
+import urllib.error
+import urllib.request
 
 import bcrypt
 import jwt
@@ -243,6 +247,16 @@ class MapErrorLogEntry(BaseModel):
     created_at: datetime
 
 
+class RoutePoint(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+
+
+class RouteModeSummariesRequest(BaseModel):
+    origin: RoutePoint
+    destination: RoutePoint
+
+
 # ---------------------------------------------------------------------------
 # Auth storage + seeding
 # ---------------------------------------------------------------------------
@@ -254,8 +268,19 @@ user_repo: UserRepository = get_user_repository()
 _ebt_records: dict[str, SimulatedEBTRecord] = {}
 _login_archive: list[LoginAuditEntry] = []
 _map_error_archive: list[MapErrorLogEntry] = []
+_route_summary_cache: dict[str, tuple[float, dict]] = {}
 _auth_lock = threading.Lock()
 _map_error_lock = threading.Lock()
+_route_summary_lock = threading.Lock()
+
+_VALHALLA_ROUTE_URL = os.getenv("VALHALLA_ROUTE_URL", "https://valhalla1.openstreetmap.de/route")
+_VALHALLA_COSTING: dict[str, str] = {
+    "driving": "auto",
+    "walking": "pedestrian",
+    "bicycling": "bicycle",
+    "transit": "pedestrian",
+}
+_ROUTE_SUMMARY_CACHE_TTL_SECONDS = 300
 
 
 def _hash_pw(password: str) -> str:
@@ -431,6 +456,102 @@ def _archive_map_error(
         if len(_map_error_archive) > 500:
             del _map_error_archive[:-500]
     return entry
+
+
+def _route_cache_key(mode: str, origin: RoutePoint, destination: RoutePoint) -> str:
+    # Round to ~11m precision so nearby GPS jitter reuses cache entries.
+    return (
+        f"{mode}:"
+        f"{round(origin.lat, 4)},{round(origin.lng, 4)}->"
+        f"{round(destination.lat, 4)},{round(destination.lng, 4)}"
+    )
+
+
+def _fetch_valhalla_route_summary(
+    *,
+    mode: str,
+    origin: RoutePoint,
+    destination: RoutePoint,
+) -> dict | None:
+    costing = _VALHALLA_COSTING.get(mode)
+    if costing is None:
+        return None
+
+    payload = {
+        "locations": [
+            {"lat": origin.lat, "lon": origin.lng},
+            {"lat": destination.lat, "lon": destination.lng},
+        ],
+        "costing": costing,
+    }
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        _VALHALLA_ROUTE_URL,
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=8) as response:
+            raw = response.read()
+    except urllib.error.HTTPError as exc:
+        logging.getLogger("mealmatch.routing").warning(
+            "Valhalla HTTP error for mode=%s status=%s", mode, exc.code
+        )
+        return None
+    except Exception as exc:
+        logging.getLogger("mealmatch.routing").warning(
+            "Valhalla request failed for mode=%s error=%s", mode, exc
+        )
+        return None
+
+    try:
+        data = json.loads(raw.decode("utf-8"))
+        summary = data.get("trip", {}).get("summary", {})
+        # Valhalla summary.length is in kilometers; convert to meters.
+        distance = float(summary.get("length", 0)) * 1000.0
+        duration = float(summary.get("time", 0))
+    except Exception:
+        return None
+
+    if distance <= 0 or duration <= 0:
+        return None
+    return {"distance": distance, "duration": duration}
+
+
+def _get_route_summary_cached(
+    *,
+    mode: str,
+    origin: RoutePoint,
+    destination: RoutePoint,
+) -> dict | None:
+    now = time.time()
+    key = _route_cache_key(mode, origin, destination)
+
+    with _route_summary_lock:
+        cached = _route_summary_cache.get(key)
+        if cached and now - cached[0] < _ROUTE_SUMMARY_CACHE_TTL_SECONDS:
+            return cached[1]
+
+    summary = _fetch_valhalla_route_summary(mode=mode, origin=origin, destination=destination)
+    if summary is None:
+        return None
+
+    with _route_summary_lock:
+        _route_summary_cache[key] = (now, summary)
+        if len(_route_summary_cache) > 500:
+            # Trim expired entries first; if still large, trim oldest keys arbitrarily.
+            expired_keys = [
+                k
+                for k, (ts, _) in _route_summary_cache.items()
+                if now - ts >= _ROUTE_SUMMARY_CACHE_TTL_SECONDS
+            ]
+            for k in expired_keys:
+                _route_summary_cache.pop(k, None)
+            while len(_route_summary_cache) > 500:
+                _route_summary_cache.pop(next(iter(_route_summary_cache)))
+    return summary
 
 
 def get_current_user(token: str | None = Depends(oauth2_scheme)) -> UserInDB:
@@ -1272,6 +1393,28 @@ def cancel_claim(
             listings[claim.listing_id] = updated_listing
             _persist_listing(updated_listing)
     return ok(updated_claim.model_dump(mode="json"), "Claim cancelled successfully")
+
+
+# ---------------------------------------------------------------------------
+# Routing summaries
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/v1/routes/mode-summaries")
+def get_route_mode_summaries(
+    payload: RouteModeSummariesRequest,
+    _: UserInDB = Depends(get_current_user),
+):
+    summaries: dict[str, dict] = {}
+    for mode in ("driving", "walking", "bicycling", "transit"):
+        summary = _get_route_summary_cached(
+            mode=mode,
+            origin=payload.origin,
+            destination=payload.destination,
+        )
+        if summary:
+            summaries[mode] = summary
+    return ok(summaries)
 
 
 # ---------------------------------------------------------------------------
