@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   BrowserRouter,
   Routes,
@@ -26,14 +26,22 @@ import PartnerPage from './pages/PartnerPage'
 import { getHealth } from './api/client'
 import './App.css'
 
-// ---------------------------------------------------------------------------
-// Authenticated app shell (header + outlet)
-// ---------------------------------------------------------------------------
+// ── Role colors (light-mode safe) ──────────────────────────────────────────
+const ROLE_COLOR = {
+  admin:      '#DC2626',
+  restaurant: '#2563EB',
+  recipient:  '#16A34A',
+  partner:    '#7C3AED',
+}
+
+// ── Authenticated app shell ─────────────────────────────────────────────────
 function AppShell() {
   const { user, logout } = useAuth()
-  const navigate = useNavigate()
-  const location = useLocation()
+  const navigate  = useNavigate()
+  const location  = useLocation()
+  const menuRef   = useRef(null)
   const [backendHealthy, setBackendHealthy] = useState(null)
+  const [menuOpen,       setMenuOpen]       = useState(false)
 
   useEffect(() => {
     getHealth()
@@ -41,99 +49,210 @@ function AppShell() {
       .catch(() => setBackendHealthy(false))
   }, [])
 
-  // Build tab list based on role
+  // Close mobile menu on route change
+  useEffect(() => {
+    const t = setTimeout(() => setMenuOpen(false), 0)
+    return () => clearTimeout(t)
+  }, [location.pathname])
+
+  // Close on outside click
+  useEffect(() => {
+    if (!menuOpen) return
+    function handle(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [menuOpen])
+
   const allTabs = [
-    { key: 'browse',     label: 'Browse Food',       path: '/browse',      roles: ['recipient', 'admin'] },
-    { key: 'my-claims',  label: 'My Claims',          path: '/my-claims',   roles: ['recipient'] },
-    { key: 'restaurant', label: 'Restaurant Portal',  path: '/restaurant',  roles: ['restaurant', 'admin'] },
-    { key: 'admin',      label: 'Admin',              path: '/admin',       roles: ['admin'] },
-    { key: 'partner',    label: 'Partner Portal',     path: '/partner',     roles: ['partner', 'admin'] },
+    { key: 'browse',     label: 'Browse Food',   path: '/browse',     roles: ['recipient', 'admin'] },
+    { key: 'my-claims',  label: 'My Claims',      path: '/my-claims',  roles: ['recipient'] },
+    { key: 'restaurant', label: 'Restaurant',     path: '/restaurant', roles: ['restaurant', 'admin'] },
+    { key: 'admin',      label: 'Admin',          path: '/admin',      roles: ['admin'] },
+    { key: 'partner',    label: 'Partner Portal', path: '/partner',    roles: ['partner', 'admin'] },
   ]
   const visibleTabs = allTabs.filter(t => t.roles.includes(user?.role))
-  const activeKey = visibleTabs.find(t => location.pathname.startsWith(t.path))?.key
+  const activeKey   = visibleTabs.find(t => location.pathname.startsWith(t.path))?.key
+  const roleColor   = ROLE_COLOR[user?.role] || '#636366'
+  const healthColor = backendHealthy === null ? '#AEAEB2' : backendHealthy ? '#16A34A' : '#DC2626'
 
   return (
-    <div style={styles.appShell}>
-      <header style={styles.header}>
-        <div style={styles.headerInner}>
+    <div style={{ minHeight: '100svh', display: 'flex', flexDirection: 'column', background: 'var(--mm-bg)' }}>
+      {/* ── Header ──────────────────────────────────────────────────────── */}
+      <header
+        ref={menuRef}
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 200,
+          background: 'rgba(255,255,255,0.88)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          borderBottom: '1px solid var(--mm-border)',
+          boxShadow: '0 1px 0 var(--mm-border)',
+        }}
+      >
+        <div style={{
+          maxWidth: 'var(--mm-max-w)',
+          margin: '0 auto',
+          padding: '0 20px',
+          height: 'var(--mm-header-h)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+        }}>
           {/* Brand */}
-          <div style={styles.brand}>
-            <img src="/MealMatch Logo.png" alt="MealMatch" style={styles.logo} />
-            <div>
-              <span style={styles.brandName}>MealMatch</span>
-              <span style={styles.brandTagline}>Connecting communities through food</span>
-            </div>
-          </div>
+          <button
+            onClick={() => navigate('/')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0,
+              background: 'none', border: 'none', cursor: 'pointer',
+              padding: '4px 6px', borderRadius: 'var(--mm-r-md)',
+            }}
+            aria-label="MealMatch home"
+          >
+            <img src="/MealMatch Logo.png" alt="" style={{ height: 30, width: 'auto', borderRadius: 7 }} />
+            <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--mm-text-1)', letterSpacing: '-.025em', whiteSpace: 'nowrap' }}>
+              MealMatch
+            </span>
+          </button>
 
-          {/* Tab nav */}
-          <nav style={styles.tabNav}>
+          {/* Desktop nav tabs */}
+          <nav style={{ display: 'flex', gap: 2, flex: 1, justifyContent: 'center' }} aria-label="Main navigation">
             {visibleTabs.map(({ key, label, path }) => (
               <button
                 key={key}
                 onClick={() => navigate(path)}
-                style={{
-                  ...styles.tabBtn,
-                  ...(activeKey === key ? styles.tabBtnActive : {}),
-                }}
+                className={`mm-nav-tab${activeKey === key ? ' mm-nav-tab-active' : ''}`}
+                aria-current={activeKey === key ? 'page' : undefined}
               >
                 {label}
               </button>
             ))}
           </nav>
 
-          {/* Right section: user pill + status */}
-          <div style={styles.rightSection}>
-            <div style={styles.userPill}>
-              <span style={{ ...styles.roleDot, background: roleColor(user?.role) }} />
-              <span style={styles.userName}>{user?.name || 'User'}</span>
-              <span style={styles.roleTag}>{user?.role}</span>
+          {/* Right side */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            {/* Health indicator */}
+            <div
+              style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              title={backendHealthy ? 'Backend live' : backendHealthy === false ? 'Backend offline' : 'Checking…'}
+            >
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: healthColor, flexShrink: 0, transition: 'background .4s' }} />
+            </div>
+
+            {/* User pill — desktop */}
+            <div
+              className="mm-hide-mobile"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '6px 12px', borderRadius: 'var(--mm-r-full)',
+                background: 'var(--mm-surface-2)',
+                border: '1px solid var(--mm-border)',
+              }}
+            >
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: roleColor, flexShrink: 0 }} />
+              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--mm-text-2)', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {user?.name || 'User'}
+              </span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--mm-text-4)', textTransform: 'uppercase', letterSpacing: '.07em' }}>
+                {user?.role}
+              </span>
               <button
                 onClick={() => { logout(); navigate('/login', { replace: true }) }}
-                style={styles.logoutBtn}
+                style={{ background: 'none', border: 'none', color: 'var(--mm-text-4)', fontSize: 12, cursor: 'pointer', padding: '2px 4px', borderRadius: 4, transition: 'color var(--mm-dur)' }}
               >
                 Sign out
               </button>
             </div>
 
-            <div style={styles.statusPill}>
-              <span style={{
-                ...styles.statusDot,
-                background: backendHealthy === null ? '#94a3b8' : backendHealthy ? '#22c55e' : '#ef4444',
-              }} />
-              <span style={styles.statusText}>
-                {backendHealthy === null ? 'Checking…' : backendHealthy ? 'Live' : 'Offline'}
+            {/* Hamburger — mobile */}
+            <button
+              className="mm-show-mobile mm-btn mm-btn-ghost mm-btn-sm"
+              onClick={() => setMenuOpen(v => !v)}
+              aria-label="Toggle menu"
+              aria-expanded={menuOpen}
+              style={{ padding: '7px 10px', color: 'var(--mm-text-2)' }}
+            >
+              <span style={{ display: 'flex', flexDirection: 'column', gap: 5, width: 18 }}>
+                {[0,1,2].map((i) => (
+                  <span key={i} style={{
+                    display: 'block', height: 2,
+                    background: 'var(--mm-text-2)', borderRadius: 2,
+                    transition: 'transform var(--mm-dur) var(--mm-ease), opacity var(--mm-dur)',
+                    ...(menuOpen && i === 0 ? { transform: 'rotate(45deg) translate(4px, 4px)' } : {}),
+                    ...(menuOpen && i === 1 ? { opacity: 0 } : {}),
+                    ...(menuOpen && i === 2 ? { transform: 'rotate(-45deg) translate(4px, -4px)' } : {}),
+                  }} />
+                ))}
               </span>
-            </div>
+            </button>
           </div>
         </div>
+
+        {/* Mobile dropdown */}
+        {menuOpen && (
+          <div
+            style={{
+              position: 'absolute', top: 'var(--mm-header-h)', left: 0, right: 0,
+              background: 'rgba(255,255,255,.97)',
+              backdropFilter: 'blur(20px)',
+              borderBottom: '1px solid var(--mm-border)',
+              padding: '12px 16px 16px',
+              display: 'flex', flexDirection: 'column', gap: 4,
+              animation: 'mm-slide-in .18s var(--mm-ease)',
+              zIndex: 190,
+              boxShadow: 'var(--mm-shadow-md)',
+            }}
+            role="menu"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 4px' }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: roleColor }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--mm-text-1)' }}>{user?.name || 'User'}</span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--mm-text-4)', textTransform: 'uppercase', letterSpacing: '.07em' }}>{user?.role}</span>
+            </div>
+            <hr style={{ border: 'none', borderTop: '1px solid var(--mm-border)', margin: '4px 0' }} />
+            {visibleTabs.map(({ key, label, path }) => (
+              <button
+                key={key}
+                onClick={() => navigate(path)}
+                className={`mm-nav-tab${activeKey === key ? ' mm-nav-tab-active' : ''}`}
+                style={{ width: '100%', textAlign: 'left', borderRadius: 'var(--mm-r-md)', padding: '10px 14px' }}
+                role="menuitem"
+              >
+                {label}
+              </button>
+            ))}
+            <hr style={{ border: 'none', borderTop: '1px solid var(--mm-border)', margin: '4px 0' }} />
+            <button
+              onClick={() => { logout(); navigate('/login', { replace: true }) }}
+              style={{ background: 'none', border: 'none', color: 'var(--mm-error)', fontSize: 13, cursor: 'pointer', padding: '10px 14px', borderRadius: 'var(--mm-r-md)', textAlign: 'left', width: '100%', fontWeight: 500 }}
+            >
+              Sign out
+            </button>
+          </div>
+        )}
       </header>
 
-      <main style={styles.main}>
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         <Outlet />
       </main>
     </div>
   )
 }
 
-function roleColor(role) {
-  return { admin: '#f97316', restaurant: '#3b82f6', recipient: '#22c55e', partner: '#a855f7' }[role] || '#94a3b8'
-}
-
-// ---------------------------------------------------------------------------
-// Root
-// ---------------------------------------------------------------------------
+// ── Root ────────────────────────────────────────────────────────────────────
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* Public pages */}
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
-          {/* Authenticated shell — pathless layout, wraps all protected sub-routes */}
           <Route
             element={
               <ProtectedRoute>
@@ -141,147 +260,16 @@ export default function App() {
               </ProtectedRoute>
             }
           >
-            {/* Browse food: recipient + admin */}
-            <Route
-              path="browse"
-              element={
-                <ProtectedRoute allowedRoles={['recipient', 'admin']}>
-                  <RecipientFeed />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* Restaurant portal: restaurant + admin */}
-            <Route
-              path="restaurant"
-              element={
-                <ProtectedRoute allowedRoles={['restaurant', 'admin']}>
-                  <RestaurantDashboard />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* My Claims: recipient only */}
-            <Route
-              path="my-claims"
-              element={
-                <ProtectedRoute allowedRoles={['recipient']}>
-                  <MyClaimsPage />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* Admin dashboard: admin only */}
-            <Route
-              path="admin"
-              element={
-                <ProtectedRoute allowedRoles={['admin']}>
-                  <AdminDashboard />
-                </ProtectedRoute>
-              }
-            />
-            {/* Partner portal: partner + admin */}
-            <Route
-              path="partner"
-              element={
-                <ProtectedRoute allowedRoles={['partner', 'admin']}>
-                  <PartnerPage />
-                </ProtectedRoute>
-              }
-            />
+            <Route path="browse" element={<ProtectedRoute allowedRoles={['recipient', 'admin']}><RecipientFeed /></ProtectedRoute>} />
+            <Route path="restaurant" element={<ProtectedRoute allowedRoles={['restaurant', 'admin']}><RestaurantDashboard /></ProtectedRoute>} />
+            <Route path="my-claims" element={<ProtectedRoute allowedRoles={['recipient']}><MyClaimsPage /></ProtectedRoute>} />
+            <Route path="admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
+            <Route path="partner" element={<ProtectedRoute allowedRoles={['partner', 'admin']}><PartnerPage /></ProtectedRoute>} />
           </Route>
 
-          {/* Catch-all */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
   )
-}
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-const styles = {
-  appShell: { minHeight: '100svh', display: 'flex', flexDirection: 'column', background: '#020817' },
-  header: {
-    position: 'sticky',
-    top: 0,
-    zIndex: 100,
-    height: '64px',
-    background: 'rgba(2,8,23,0.82)',
-    backdropFilter: 'blur(20px)',
-    WebkitBackdropFilter: 'blur(20px)',
-    borderBottom: '1px solid rgba(148,163,184,0.12)',
-  },
-  headerInner: {
-    maxWidth: '1400px',
-    margin: '0 auto',
-    padding: '0 24px',
-    height: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-  },
-  brand: { display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 },
-  logo: { height: '38px', width: 'auto', borderRadius: '8px' },
-  brandName: {
-    display: 'block',
-    fontSize: '18px',
-    fontWeight: 800,
-    color: '#f1f5f9',
-    lineHeight: 1.15,
-    letterSpacing: '-0.02em',
-  },
-  brandTagline: { display: 'block', fontSize: '11px', color: 'rgba(148,163,184,0.7)', fontWeight: 500 },
-  tabNav: { display: 'flex', gap: '4px', flex: 1, justifyContent: 'center' },
-  tabBtn: {
-    padding: '8px 18px',
-    borderRadius: '8px',
-    border: 'none',
-    background: 'transparent',
-    color: 'rgba(148,163,184,0.7)',
-    fontWeight: 600,
-    fontSize: '14px',
-    cursor: 'pointer',
-    transition: 'background 0.15s, color 0.15s',
-    fontFamily: 'inherit',
-  },
-  tabBtnActive: { background: 'rgba(249,115,22,0.12)', color: '#f97316' },
-  rightSection: { display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 },
-  userPill: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '7px',
-    padding: '6px 10px',
-    borderRadius: '999px',
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid rgba(148,163,184,0.14)',
-  },
-  roleDot: { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0 },
-  userName: { fontSize: '13px', fontWeight: 600, color: '#e2e8f0', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  roleTag: { fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' },
-  logoutBtn: {
-    border: 'none',
-    background: 'none',
-    color: 'rgba(148,163,184,0.6)',
-    fontSize: '12px',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    padding: '2px 4px',
-    borderRadius: 4,
-  },
-  statusPill: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '7px',
-    padding: '7px 14px',
-    borderRadius: '999px',
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid rgba(148,163,184,0.14)',
-    flexShrink: 0,
-  },
-  statusDot: { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0 },
-  statusText: { fontSize: '13px', fontWeight: 700, color: '#cbd5e1' },
-  main: { flex: 1, display: 'flex', flexDirection: 'column' },
 }

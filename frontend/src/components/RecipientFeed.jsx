@@ -1,17 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { getListings, claimListing as apiClaimListing, getMyClaims } from "../api/client";
 import { useAuth } from "../auth/useAuth";
 import MealMap from "./MealMap";
+import { Notification } from "./ui/Notification";
 
 export default function RecipientFeed() {
   const { state: routeState } = useLocation();
+  const mapRef = useRef(null);
   const [listings, setListings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [claimingIds, setClaimingIds] = useState(new Set());
   const [viewMode, setViewMode] = useState(routeState?.focusListingId ? "map" : "list");
   const [focusedListingId, setFocusedListingId] = useState(routeState?.focusListingId || null);
+  const [pendingNav] = useState(
+    routeState?.autoNav ? { navMode: routeState.navMode || "driving" } : null
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTag, setSelectedTag] = useState("all");
   const [sortBy, setSortBy] = useState("recommended");
@@ -42,6 +47,19 @@ export default function RecipientFeed() {
     const interval = setInterval(fetchListings, 15000);
     return () => clearInterval(interval);
   }, []);
+
+  // Auto-start in-app navigation when arriving from My Claims with autoNav state.
+  // Wait for !isLoading so the MealMap is actually mounted and the ref is populated.
+  useEffect(() => {
+    if (!pendingNav || !focusedListingId || isLoading || !listings.length) return;
+    const listing = listings.find((l) => l.id === focusedListingId);
+    if (!listing?.location) return;
+    // Small delay to let the map finish its initial render
+    const t = setTimeout(() => {
+      mapRef.current?.startNavigation(listing, pendingNav.navMode);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [pendingNav, focusedListingId, listings, isLoading]);
 
   // Pre-populate justClaimedIds from My Claims so returning users see "Claimed" state
   useEffect(() => {
@@ -221,33 +239,34 @@ export default function RecipientFeed() {
   };
 
   return (
-    <div style={styles.shell}>
-      <div style={styles.hero}>
-        <div>
-          <div style={styles.heroBadge}>Real-time food recovery network</div>
-          <h1 style={styles.title}>Find nearby meals. Claim in seconds.</h1>
-          <p style={styles.subtitle}>
+    <div className="mm-page-wrap">
+      {/* Hero */}
+      <div className="mm-page-hero">
+        <div style={{ flex: 1 }}>
+          <p className="mm-page-hero-eyebrow">MealMatch · Browse</p>
+          <h1 className="mm-page-hero-title">Find nearby meals.<br />Claim in seconds.</h1>
+          <p className="mm-page-hero-subtitle">
             Browse live surplus listings, filter by dietary needs, and reserve a
             pickup slot through a fast, mobile-friendly interface.
           </p>
         </div>
 
-        <div style={styles.livePanel}>
-          <div style={styles.liveHeader}>
-            <span style={styles.liveDot} />
+        <div style={s.livePanel}>
+          <div style={s.liveHeader}>
+            <span style={s.liveDot} />
             <span>Live availability</span>
           </div>
-          <div style={styles.liveStatRow}>
+          <div style={s.liveStatRow}>
             <MiniStat label="Listings" value={stats.activeListings} />
-            <MiniStat label="Meals" value={stats.mealsAvailable} />
-            <MiniStat label="Urgent" value={stats.urgentPickups} />
+            <MiniStat label="Meals"    value={stats.mealsAvailable} />
+            <MiniStat label="Urgent"   value={stats.urgentPickups} />
           </div>
         </div>
       </div>
 
+      {/* Error */}
       {error && (
-        <div style={{ ...styles.notification, ...styles.notificationError }}>
-          <span style={styles.notificationPulse} />
+        <div className="mm-alert mm-alert-error" style={{ marginBottom: 16 }} role="alert">
           {error}
           <button
             onClick={fetchListings}
@@ -258,37 +277,29 @@ export default function RecipientFeed() {
         </div>
       )}
 
-      {notification && (
-        <div
-          style={{
-            ...styles.notification,
-            ...(notification.type === "success"
-              ? styles.notificationSuccess
-              : styles.notificationError),
-          }}
-        >
-          <span style={styles.notificationPulse} />
-          {notification.message}
-        </div>
-      )}
+      <Notification notification={notification} />
 
-      <div style={styles.toolbar}>
-        <div style={styles.searchWrap}>
-          <span style={styles.searchIcon}>⌕</span>
+      {/* Toolbar */}
+      <div style={s.toolbar}>
+        <div style={s.searchWrap}>
+          <span style={s.searchIcon} aria-hidden="true">⌕</span>
           <input
             type="text"
             placeholder="Search meals, tags, or location"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            style={styles.searchInput}
+            style={s.searchInput}
+            aria-label="Search listings"
           />
         </div>
 
-        <div style={styles.controls}>
+        <div style={s.controls}>
           <select
             value={selectedTag}
             onChange={(e) => setSelectedTag(e.target.value)}
-            style={styles.select}
+            className="mm-select"
+            style={{ minHeight: 44 }}
+            aria-label="Filter by dietary tag"
           >
             {allTags.map((tag) => (
               <option key={tag} value={tag}>
@@ -300,7 +311,9 @@ export default function RecipientFeed() {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
-            style={styles.select}
+            className="mm-select"
+            style={{ minHeight: 44 }}
+            aria-label="Sort listings"
           >
             <option value="recommended">Recommended</option>
             <option value="ending-soon">Ending soon</option>
@@ -311,30 +324,26 @@ export default function RecipientFeed() {
 
           <button
             onClick={() => setShowUrgentOnly((prev) => !prev)}
-            style={{
-              ...styles.toggleButton,
-              ...(showUrgentOnly ? styles.toggleButtonActive : {}),
-            }}
+            className={`mm-btn ${showUrgentOnly ? "mm-btn-warning" : "mm-btn-ghost"} mm-btn-sm`}
+            aria-pressed={showUrgentOnly}
           >
             Urgent only
           </button>
 
-          <div style={styles.viewToggle}>
+          <div style={s.viewToggle}>
             <button
               onClick={() => setViewMode("list")}
-              style={{
-                ...styles.viewButton,
-                ...(viewMode === "list" ? styles.viewButtonActive : {}),
-              }}
+              className={`mm-btn mm-btn-sm${viewMode === "list" ? " mm-btn-primary" : " mm-btn-ghost"}`}
+              style={{ minWidth: 60 }}
+              aria-pressed={viewMode === "list"}
             >
               List
             </button>
             <button
               onClick={() => setViewMode("map")}
-              style={{
-                ...styles.viewButton,
-                ...(viewMode === "map" ? styles.viewButtonActive : {}),
-              }}
+              className={`mm-btn mm-btn-sm${viewMode === "map" ? " mm-btn-primary" : " mm-btn-ghost"}`}
+              style={{ minWidth: 60 }}
+              aria-pressed={viewMode === "map"}
             >
               Map
             </button>
@@ -342,34 +351,39 @@ export default function RecipientFeed() {
         </div>
       </div>
 
-      <div style={styles.statsRow}>
-        <GlassCard>
-          <div style={styles.statLabel}>Active listings</div>
-          <div style={styles.statValue}>{stats.activeListings}</div>
-        </GlassCard>
-        <GlassCard>
-          <div style={styles.statLabel}>Meals available</div>
-          <div style={styles.statValue}>{stats.mealsAvailable}</div>
-        </GlassCard>
-        <GlassCard>
-          <div style={styles.statLabel}>Ending soon</div>
-          <div style={styles.statValue}>{stats.urgentPickups}</div>
-        </GlassCard>
+      {/* Stats row */}
+      <div style={s.statsRow}>
+        {[
+          { label: "Active listings", value: stats.activeListings },
+          { label: "Meals available", value: stats.mealsAvailable },
+          { label: "Ending soon",     value: stats.urgentPickups },
+        ].map(({ label, value }) => (
+          <div key={label} className="mm-card" style={s.statCard}>
+            <div style={s.statLabel}>{label}</div>
+            <div style={s.statValue}>{value}</div>
+          </div>
+        ))}
       </div>
 
-      {isLoading ? (
-        <div style={styles.cardGrid}>
-          {[1, 2, 3].map((item) => (
-            <div key={item} style={styles.skeletonCard}>
-              <div style={{ ...styles.skeletonBar, width: "60%" }} />
-              <div style={{ ...styles.skeletonBar, width: "90%" }} />
-              <div style={{ ...styles.skeletonBar, width: "50%" }} />
+      {/* Loading skeletons */}
+      {isLoading && (
+        <div style={s.cardGrid}>
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="mm-card" style={{ padding: 22, display: "flex", flexDirection: "column", gap: 12, minHeight: 200 }}>
+              <div className="mm-skeleton" style={{ height: 12, width: "40%" }} />
+              <div className="mm-skeleton" style={{ height: 18, width: "70%" }} />
+              <div className="mm-skeleton" style={{ height: 12, width: "85%" }} />
+              <div className="mm-skeleton" style={{ height: 12, width: "55%" }} />
             </div>
           ))}
         </div>
-      ) : viewMode === "map" ? (
-        <div style={styles.mapShell}>
+      )}
+
+      {/* Map view */}
+      {!isLoading && viewMode === "map" && (
+        <div style={s.mapShell}>
           <MealMap
+            ref={mapRef}
             listings={filteredListings}
             focusedId={focusedListingId}
             onListingClick={(l) => setFocusedListingId(l.id)}
@@ -378,107 +392,110 @@ export default function RecipientFeed() {
             height={560}
           />
         </div>
-      ) : filteredListings.length === 0 ? (
-        <div style={styles.emptyState}>
-          <div style={styles.emptyIcon}>⌕</div>
-          <h3 style={styles.emptyTitle}>No matching listings right now</h3>
-          <p style={styles.emptyText}>
+      )}
+
+      {/* Empty state */}
+      {!isLoading && viewMode === "list" && filteredListings.length === 0 && (
+        <div className="mm-empty">
+          <div className="mm-empty-icon" aria-hidden="true">⌕</div>
+          <h3 className="mm-empty-title">No matching listings right now</h3>
+          <p className="mm-empty-text">
             Try a different search, remove a filter, or switch to map view.
           </p>
         </div>
-      ) : (
-        <div style={styles.cardGrid}>
+      )}
+
+      {/* Listing cards */}
+      {!isLoading && viewMode === "list" && filteredListings.length > 0 && (
+        <div style={s.cardGrid}>
           {filteredListings.map((listing) => {
             const minutesLeft = getMinutesLeft(listing.pickup_end);
             const isUrgent = minutesLeft > 0 && minutesLeft <= 30;
             const maxQuantity = Number(listing.quantity || 1);
             const claimValue = claimCounts[listing.id] || 1;
-
             const alreadyClaimed = justClaimedIds.has(listing.id);
 
+            let statusBadge = "mm-badge-success";
+            let statusLabel = "Available";
+            if (alreadyClaimed) { statusBadge = "mm-badge-neutral"; statusLabel = "Claimed"; }
+            else if (isUrgent)  { statusBadge = "mm-badge-warning"; statusLabel = "Urgent"; }
+
             return (
-              <div key={listing.id} style={styles.listingCard}>
-                <div style={styles.cardTop}>
-                  <div>
-                    <div style={styles.locationPill}>
+              <div key={listing.id} className="mm-card" style={s.listingCard}>
+                {/* Card top */}
+                <div style={s.cardTop}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={s.locationPill}>
                       {listing.location_name || listing.address || "Nearby pickup"}
                     </div>
-                    <h3 style={styles.cardTitle}>{listing.title}</h3>
-                    <p style={styles.cardDescription}>
+                    <h3 style={s.cardTitle}>{listing.title}</h3>
+                    <p style={s.cardDescription}>
                       {listing.description || "Freshly posted listing."}
                     </p>
                   </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-                    <div
-                      style={{
-                        ...styles.statusBadge,
-                        ...(alreadyClaimed ? styles.statusClaimed : isUrgent ? styles.statusUrgent : styles.statusActive),
-                      }}
-                    >
-                      {alreadyClaimed ? "Claimed" : isUrgent ? "Urgent" : "Available"}
-                    </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
+                    <span className={`mm-badge ${statusBadge}`}>{statusLabel}</span>
                     {listing.match_score != null && listing.match_score >= 55 && (
-                      <div style={styles.matchBadge} title={(listing.match_reasons || []).join(" · ") || "Match score"}>
+                      <span
+                        className="mm-badge mm-badge-partner"
+                        title={(listing.match_reasons || []).join(" · ") || "Match score"}
+                        style={{ fontSize: 11 }}
+                      >
                         {Math.round(listing.match_score)}% match
-                      </div>
+                      </span>
                     )}
                   </div>
                 </div>
 
-                <div style={styles.infoGrid}>
-                  <InfoBlock label="Quantity" value={`${listing.quantity}`} />
-                  <InfoBlock
-                    label="Pickup starts"
-                    value={formatTime(listing.pickup_start)}
-                  />
-                  <InfoBlock
-                    label="Pickup ends"
-                    value={formatTime(listing.pickup_end)}
-                  />
-                  <InfoBlock
-                    label="Time left"
-                    value={formatMinutesLeft(minutesLeft)}
-                  />
+                {/* Info grid */}
+                <div style={s.infoGrid}>
+                  <InfoBlock label="Quantity"     value={`${listing.quantity}`} />
+                  <InfoBlock label="Pickup starts" value={formatTime(listing.pickup_start)} />
+                  <InfoBlock label="Pickup ends"   value={formatTime(listing.pickup_end)} />
+                  <InfoBlock label="Time left"     value={formatMinutesLeft(minutesLeft)} />
                 </div>
 
-                <div style={styles.tagRow}>
+                {/* Tags */}
+                <div style={s.tagRow}>
                   {(listing.dietary_tags || []).length > 0 ? (
                     listing.dietary_tags.map((tag) => (
-                      <span key={tag} style={styles.tag}>
+                      <span key={tag} className="mm-badge mm-badge-success" style={{ fontSize: 11 }}>
                         {tag}
                       </span>
                     ))
                   ) : (
-                    <span style={styles.tagMuted}>No dietary tags</span>
+                    <span style={{ color: "var(--mm-text-4)", fontSize: 13 }}>No dietary tags</span>
                   )}
                 </div>
 
+                {/* Address + show on map */}
                 {(listing.address || listing.location?.lat != null) && (
-                  <div style={styles.addressRow}>
+                  <div style={s.addressRow}>
                     {listing.address && (
-                      <span style={styles.addressText}>{listing.address}</span>
+                      <span style={s.addressText}>{listing.address}</span>
                     )}
                     <button
                       onClick={() => showOnMap(listing)}
-                      style={styles.showOnMapBtn}
+                      className="mm-btn mm-btn-ghost mm-btn-sm"
                     >
                       Show on map
                     </button>
                   </div>
                 )}
 
+                {/* Urgent banner */}
                 {isUrgent && (
-                  <div style={styles.urgentBanner}>
-                    This listing is about to expire. Claim soon for the best
-                    chance of pickup.
+                  <div className="mm-alert mm-alert-warning" style={{ marginTop: 0 }}>
+                    This listing is about to expire. Claim soon for the best chance of pickup.
                   </div>
                 )}
 
+                {/* Slot picker */}
                 {(listing.pickup_slots || []).length > 0 && (
-                  <div style={styles.slotRow}>
-                    <label style={styles.claimLabel}>Pickup slot</label>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <label className="mm-label" htmlFor={`slot-${listing.id}`}>Pickup slot</label>
                     <select
+                      id={`slot-${listing.id}`}
                       value={slotSelections[listing.id] || ""}
                       onChange={(e) =>
                         setSlotSelections((prev) => ({
@@ -486,7 +503,7 @@ export default function RecipientFeed() {
                           [listing.id]: e.target.value || null,
                         }))
                       }
-                      style={styles.slotSelect}
+                      className="mm-select"
                       disabled={alreadyClaimed}
                     >
                       <option value="">Select a slot…</option>
@@ -499,22 +516,21 @@ export default function RecipientFeed() {
                   </div>
                 )}
 
-                <div style={styles.cardFooter}>
-                  <div style={styles.claimControl}>
-                    <label style={styles.claimLabel}>Claim</label>
+                {/* Claim row */}
+                <div style={s.cardFooter}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <label className="mm-label" htmlFor={`qty-${listing.id}`}>Claim qty</label>
                     <input
+                      id={`qty-${listing.id}`}
                       type="number"
                       min="1"
                       max={maxQuantity}
                       value={claimValue}
                       onChange={(e) =>
-                        handleClaimCountChange(
-                          listing.id,
-                          e.target.value,
-                          maxQuantity
-                        )
+                        handleClaimCountChange(listing.id, e.target.value, maxQuantity)
                       }
-                      style={styles.quantityInput}
+                      className="mm-input"
+                      style={{ width: 90 }}
                       disabled={alreadyClaimed}
                     />
                   </div>
@@ -522,18 +538,13 @@ export default function RecipientFeed() {
                   <button
                     onClick={() => handleClaim(listing)}
                     disabled={alreadyClaimed || claimingIds.has(listing.id)}
-                    style={{
-                      ...styles.claimButton,
-                      ...(alreadyClaimed ? styles.claimButtonClaimed : {}),
-                      ...(claimingIds.has(listing.id)
-                        ? styles.claimButtonDisabled
-                        : {}),
-                    }}
+                    className={`mm-btn ${alreadyClaimed ? "mm-btn-ghost" : "mm-btn-primary"}`}
+                    style={{ minWidth: 160 }}
                   >
                     {alreadyClaimed
                       ? "Claimed"
                       : claimingIds.has(listing.id)
-                      ? "Claiming..."
+                      ? "Claiming…"
                       : "Reserve pickup"}
                   </button>
                 </div>
@@ -546,24 +557,20 @@ export default function RecipientFeed() {
   );
 }
 
-function GlassCard({ children }) {
-  return <div style={styles.glassCard}>{children}</div>;
-}
-
 function MiniStat({ label, value }) {
   return (
-    <div style={styles.miniStat}>
-      <div style={styles.miniStatValue}>{value}</div>
-      <div style={styles.miniStatLabel}>{label}</div>
+    <div style={s.miniStat}>
+      <div style={s.miniStatValue}>{value}</div>
+      <div style={s.miniStatLabel}>{label}</div>
     </div>
   );
 }
 
 function InfoBlock({ label, value }) {
   return (
-    <div style={styles.infoBlock}>
-      <div style={styles.infoLabel}>{label}</div>
-      <div style={styles.infoValue}>{value}</div>
+    <div style={s.infoBlock}>
+      <div style={s.infoLabel}>{label}</div>
+      <div style={s.infoValue}>{value}</div>
     </div>
   );
 }
@@ -589,517 +596,207 @@ function formatMinutesLeft(minutes) {
   return `${hours}h ${mins}m`;
 }
 
-const styles = {
-  shell: {
-    maxWidth: 1400,
-    margin: "0 auto",
-    padding: "28px 24px 48px",
-    width: "100%",
-    color: "#f8fafc",
-    fontFamily:
-      "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-  },
+const s = {
   hero: {
-    position: "relative",
-    overflow: "hidden",
-    background:
-      "radial-gradient(circle at top left, rgba(34,197,94,0.22), transparent 30%), radial-gradient(circle at top right, rgba(249,115,22,0.28), transparent 28%), linear-gradient(135deg, #0f172a 0%, #111827 48%, #020617 100%)",
-    border: "1px solid rgba(148,163,184,0.18)",
-    borderRadius: 24,
-    padding: 28,
-    boxShadow: "0 24px 60px rgba(2,6,23,0.45)",
-    textAlign: "left",
+    background: "var(--mm-surface-1)",
+    border: "1px solid var(--mm-border)",
+    borderRadius: "var(--mm-r-2xl)",
+    padding: "28px 32px",
+    boxShadow: "var(--mm-shadow-sm)",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 24,
+    flexWrap: "wrap",
+    marginBottom: 20,
   },
   heroBadge: {
     display: "inline-flex",
     alignItems: "center",
-    gap: 8,
-    padding: "8px 14px",
-    borderRadius: 999,
-    background: "rgba(255,255,255,0.08)",
-    border: "1px solid rgba(255,255,255,0.08)",
-    color: "#cbd5e1",
-    fontSize: 13,
+    padding: "6px 14px",
+    borderRadius: "var(--mm-r-full)",
+    background: "var(--mm-brand-dim)",
+    border: "1px solid var(--mm-brand-ring)",
+    color: "var(--mm-brand)",
+    fontSize: 12,
     fontWeight: 700,
-    letterSpacing: 0.3,
-    marginBottom: 16,
+    letterSpacing: ".04em",
+    marginBottom: 14,
   },
   title: {
-    margin: 0,
-    fontSize: "clamp(2rem, 4vw, 3.3rem)",
-    lineHeight: 1.05,
+    margin: "0 0 10px",
+    fontSize: "clamp(1.6rem,3.5vw,2.6rem)",
+    lineHeight: 1.1,
     fontWeight: 800,
-    color: "#f8fafc",
+    color: "var(--mm-text-1)",
+    letterSpacing: "-.025em",
   },
   subtitle: {
-    marginTop: 14,
-    maxWidth: 760,
-    color: "#cbd5e1",
-    fontSize: 16,
+    margin: 0,
+    maxWidth: 680,
+    color: "var(--mm-text-3)",
+    fontSize: 15,
     lineHeight: 1.65,
   },
   livePanel: {
-    marginTop: 24,
-    display: "inline-block",
-    background: "rgba(255,255,255,0.06)",
-    border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: 18,
+    flexShrink: 0,
+    background: "var(--mm-surface-2)",
+    border: "1px solid var(--mm-border)",
+    borderRadius: "var(--mm-r-xl)",
     padding: 18,
-    backdropFilter: "blur(10px)",
   },
   liveHeader: {
     display: "flex",
     alignItems: "center",
-    gap: 10,
-    color: "#e2e8f0",
+    gap: 8,
+    color: "var(--mm-text-2)",
     fontWeight: 700,
-    marginBottom: 14,
+    fontSize: 13,
+    marginBottom: 12,
   },
   liveDot: {
-    width: 10,
-    height: 10,
+    width: 9,
+    height: 9,
     borderRadius: "50%",
-    background: "#22c55e",
-    boxShadow: "0 0 0 6px rgba(34,197,94,0.15)",
+    background: "#16A34A",
+    boxShadow: "0 0 0 5px rgba(22,163,74,.15)",
   },
-  liveStatRow: {
-    display: "flex",
-    gap: 12,
-    flexWrap: "wrap",
-  },
+  liveStatRow: { display: "flex", gap: 10, flexWrap: "wrap" },
   miniStat: {
-    background: "rgba(2,6,23,0.35)",
-    borderRadius: 14,
-    padding: "12px 16px",
-    minWidth: 90,
+    background: "var(--mm-surface-1)",
+    border: "1px solid var(--mm-border)",
+    borderRadius: "var(--mm-r-lg)",
+    padding: "10px 14px",
+    minWidth: 80,
+    boxShadow: "var(--mm-shadow-sm)",
   },
-  miniStatValue: {
-    fontWeight: 800,
-    fontSize: 22,
-    color: "#ffffff",
-  },
-  miniStatLabel: {
-    marginTop: 4,
-    color: "#94a3b8",
-    fontSize: 12,
-  },
-  notification: {
-    marginTop: 18,
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    padding: "14px 18px",
-    borderRadius: 16,
-    fontWeight: 700,
-    animation: "slideIn 0.25s ease",
-    textAlign: "left",
-  },
-  notificationSuccess: {
-    background: "rgba(34,197,94,0.14)",
-    border: "1px solid rgba(34,197,94,0.3)",
-    color: "#bbf7d0",
-  },
-  notificationWarning: {
-    background: "rgba(245,158,11,0.14)",
-    border: "1px solid rgba(245,158,11,0.3)",
-    color: "#fde68a",
-  },
-  notificationError: {
-    background: "rgba(239,68,68,0.14)",
-    border: "1px solid rgba(239,68,68,0.3)",
-    color: "#fecaca",
-  },
-  notificationPulse: {
-    width: 10,
-    height: 10,
-    borderRadius: "50%",
-    background: "currentColor",
-    opacity: 0.9,
-  },
+  miniStatValue: { fontWeight: 800, fontSize: 20, color: "var(--mm-text-1)" },
+  miniStatLabel: { marginTop: 3, color: "var(--mm-text-4)", fontSize: 11 },
   toolbar: {
-    marginTop: 22,
     display: "flex",
-    gap: 14,
+    gap: 12,
     flexWrap: "wrap",
     alignItems: "center",
     justifyContent: "space-between",
+    marginBottom: 16,
   },
   searchWrap: {
-    flex: "1 1 280px",
-    minWidth: 260,
+    flex: "1 1 260px",
+    minWidth: 240,
     display: "flex",
     alignItems: "center",
     gap: 10,
-    background: "rgba(15,23,42,0.9)",
-    border: "1px solid rgba(148,163,184,0.16)",
-    borderRadius: 16,
+    background: "var(--mm-surface-1)",
+    border: "1px solid var(--mm-border-md)",
+    borderRadius: "var(--mm-r-xl)",
     padding: "0 14px",
-    minHeight: 52,
-    boxShadow: "0 8px 24px rgba(2,6,23,0.25)",
+    minHeight: 48,
   },
-  searchIcon: {
-    color: "#94a3b8",
-    fontSize: 18,
-  },
+  searchIcon: { color: "var(--mm-text-4)", fontSize: 18 },
   searchInput: {
     flex: 1,
     border: "none",
     outline: "none",
     background: "transparent",
-    color: "#f8fafc",
-    fontSize: 15,
+    color: "var(--mm-text-1)",
+    fontSize: 14,
+    fontFamily: "inherit",
   },
   controls: {
     display: "flex",
-    gap: 10,
+    gap: 8,
     flexWrap: "wrap",
     alignItems: "center",
-    justifyContent: "flex-end",
   },
-  select: {
-    background: "#0f172a",
-    color: "#f8fafc",
-    border: "1px solid rgba(148,163,184,0.18)",
-    borderRadius: 14,
-    padding: "12px 14px",
-    minHeight: 48,
-    outline: "none",
-    boxShadow: "0 8px 24px rgba(2,6,23,0.2)",
-  },
-  toggleButton: {
-    minHeight: 48,
-    padding: "0 16px",
-    borderRadius: 14,
-    border: "1px solid rgba(148,163,184,0.18)",
-    background: "#0f172a",
-    color: "#e2e8f0",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  toggleButtonActive: {
-    background: "#f97316",
-    color: "#fff",
-    border: "none",
-  },
-  viewToggle: {
-    display: "flex",
-    background: "#0f172a",
-    border: "1px solid rgba(148,163,184,0.16)",
-    borderRadius: 14,
-    padding: 4,
-    gap: 4,
-  },
-  viewButton: {
-    minHeight: 40,
-    minWidth: 72,
-    borderRadius: 10,
-    border: "none",
-    background: "transparent",
-    color: "#cbd5e1",
-    cursor: "pointer",
-    fontWeight: 700,
-  },
-  viewButtonActive: {
-    background: "#f97316",
-    color: "#fff",
-  },
+  viewToggle: { display: "flex", gap: 4 },
   statsRow: {
-    marginTop: 20,
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-    gap: 14,
+    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+    gap: 12,
+    marginBottom: 20,
   },
-  glassCard: {
-    background: "linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))",
-    backdropFilter: "blur(10px)",
-    border: "1px solid rgba(148,163,184,0.16)",
-    borderRadius: 18,
-    padding: 18,
-    textAlign: "left",
-    boxShadow: "0 12px 30px rgba(2,6,23,0.2)",
-  },
-  statLabel: {
-    color: "#94a3b8",
-    fontSize: 13,
-    fontWeight: 700,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  statValue: {
-    marginTop: 10,
-    fontSize: 32,
-    fontWeight: 800,
-    color: "#ffffff",
-    overflowWrap: "break-word",
-    wordBreak: "break-all",
-  },
+  statCard: { padding: "16px 18px" },
+  statLabel: { color: "var(--mm-text-4)", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 },
+  statValue: { fontSize: 30, fontWeight: 800, color: "var(--mm-text-1)", lineHeight: 1 },
   mapShell: {
-    marginTop: 20,
-    borderRadius: 22,
+    borderRadius: "var(--mm-r-2xl)",
     overflow: "hidden",
-    border: "1px solid rgba(148,163,184,0.18)",
-    boxShadow: "0 20px 50px rgba(2,6,23,0.35)",
+    border: "1px solid var(--mm-border)",
+    boxShadow: "var(--mm-shadow-lg)",
+    marginBottom: 20,
   },
   cardGrid: {
-    marginTop: 20,
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
     gap: 18,
   },
-  skeletonCard: {
-    minHeight: 220,
-    borderRadius: 22,
-    background: "linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))",
-    border: "1px solid rgba(148,163,184,0.12)",
-    padding: 22,
-  },
-  skeletonBar: {
-    height: 14,
-    borderRadius: 10,
-    background: "rgba(148,163,184,0.16)",
-    marginBottom: 14,
-  },
   emptyState: {
-    marginTop: 20,
-    borderRadius: 22,
-    padding: "48px 24px",
+    borderRadius: "var(--mm-r-2xl)",
+    padding: "52px 24px",
     textAlign: "center",
-    background: "linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))",
-    border: "1px solid rgba(148,163,184,0.14)",
+    background: "var(--mm-surface-2)",
+    border: "1.5px dashed var(--mm-border-md)",
   },
-  emptyIcon: {
-    fontSize: 40,
-    marginBottom: 12,
-    color: "#fb923c",
-  },
-  emptyTitle: {
-    margin: 0,
-    fontSize: 24,
-    color: "#f8fafc",
-  },
-  emptyText: {
-    marginTop: 10,
-    color: "#94a3b8",
-  },
+  emptyIcon: { fontSize: 40, marginBottom: 12, color: "var(--mm-brand)", opacity: .7 },
+  emptyTitle: { margin: "0 0 10px", fontSize: 22, fontWeight: 700, color: "var(--mm-text-1)" },
+  emptyText: { margin: 0, color: "var(--mm-text-4)", lineHeight: 1.65 },
   listingCard: {
-    background:
-      "radial-gradient(circle at top right, rgba(249,115,22,0.1), transparent 24%), linear-gradient(180deg, rgba(15,23,42,0.96), rgba(2,6,23,0.96))",
-    border: "1px solid rgba(148,163,184,0.16)",
-    borderRadius: 22,
+    display: "flex",
+    flexDirection: "column",
+    gap: 14,
     padding: 22,
-    textAlign: "left",
-    boxShadow: "0 18px 40px rgba(2,6,23,0.32)",
   },
   cardTop: {
     display: "flex",
     justifyContent: "space-between",
-    gap: 16,
+    gap: 14,
     alignItems: "flex-start",
   },
   locationPill: {
     display: "inline-flex",
-    padding: "6px 10px",
-    borderRadius: 999,
-    background: "rgba(249,115,22,0.14)",
-    color: "#fdba74",
-    fontSize: 12,
-    fontWeight: 700,
-    marginBottom: 12,
-  },
-  cardTitle: {
-    margin: 0,
-    color: "#ffffff",
-    fontSize: 22,
-    fontWeight: 800,
-  },
-  cardDescription: {
-    marginTop: 10,
-    color: "#cbd5e1",
-    lineHeight: 1.6,
-    fontSize: 14,
-  },
-  statusBadge: {
-    whiteSpace: "nowrap",
-    borderRadius: 999,
-    padding: "8px 12px",
-    fontSize: 12,
-    fontWeight: 800,
-    letterSpacing: 0.4,
-  },
-  statusActive: {
-    background: "rgba(34,197,94,0.12)",
-    color: "#86efac",
-    border: "1px solid rgba(34,197,94,0.22)",
-  },
-  statusUrgent: {
-    background: "rgba(245,158,11,0.12)",
-    color: "#fcd34d",
-    border: "1px solid rgba(245,158,11,0.22)",
-  },
-  statusClaimed: {
-    background: "rgba(148,163,184,0.1)",
-    color: "#94a3b8",
-    border: "1px solid rgba(148,163,184,0.2)",
-  },
-  matchBadge: {
-    padding: "3px 9px",
-    borderRadius: "999px",
-    fontSize: "11px",
-    fontWeight: 700,
-    background: "rgba(168,85,247,0.14)",
-    color: "#c084fc",
-    border: "1px solid rgba(168,85,247,0.25)",
-    cursor: "default",
-    userSelect: "none",
-  },
-  infoGrid: {
-    marginTop: 18,
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 12,
-  },
-  infoBlock: {
-    background: "rgba(255,255,255,0.04)",
-    border: "1px solid rgba(148,163,184,0.1)",
-    borderRadius: 16,
-    padding: 14,
-  },
-  infoLabel: {
-    color: "#94a3b8",
-    fontSize: 12,
+    padding: "4px 10px",
+    borderRadius: "var(--mm-r-full)",
+    background: "var(--mm-brand-dim)",
+    color: "var(--mm-brand)",
+    fontSize: 11,
     fontWeight: 700,
     marginBottom: 8,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
+    maxWidth: "100%",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   },
-  infoValue: {
-    color: "#f8fafc",
-    fontSize: 16,
-    fontWeight: 700,
+  cardTitle: { margin: "0 0 6px", color: "var(--mm-text-1)", fontSize: 18, fontWeight: 800, lineHeight: 1.2 },
+  cardDescription: { margin: 0, color: "var(--mm-text-3)", lineHeight: 1.6, fontSize: 13 },
+  infoGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 10,
   },
-  tagRow: {
-    marginTop: 16,
-    display: "flex",
-    gap: 8,
-    flexWrap: "wrap",
+  infoBlock: {
+    background: "var(--mm-surface-2)",
+    border: "1px solid var(--mm-border)",
+    borderRadius: "var(--mm-r-lg)",
+    padding: "10px 12px",
   },
-  tag: {
-    display: "inline-flex",
-    alignItems: "center",
-    padding: "7px 11px",
-    borderRadius: 999,
-    background: "rgba(16,185,129,0.12)",
-    color: "#6ee7b7",
-    fontSize: 12,
-    fontWeight: 700,
-    border: "1px solid rgba(16,185,129,0.16)",
-  },
-  tagMuted: {
-    color: "#94a3b8",
-    fontSize: 13,
-  },
-  urgentBanner: {
-    marginTop: 16,
-    padding: "12px 14px",
-    borderRadius: 14,
-    background: "rgba(245,158,11,0.12)",
-    color: "#fde68a",
-    border: "1px solid rgba(245,158,11,0.2)",
-    lineHeight: 1.5,
-    fontSize: 13,
-    fontWeight: 600,
-  },
-  cardFooter: {
-    marginTop: 18,
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 14,
-    alignItems: "end",
-    flexWrap: "wrap",
-  },
-  claimControl: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-  },
-  claimLabel: {
-    color: "#94a3b8",
-    fontSize: 12,
-    fontWeight: 700,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-  },
-  quantityInput: {
-    width: 90,
-    background: "#020617",
-    color: "#f8fafc",
-    border: "1px solid rgba(148,163,184,0.18)",
-    borderRadius: 12,
-    padding: "12px 14px",
-    outline: "none",
-    fontWeight: 700,
-  },
-  slotRow: {
-    marginTop: 14,
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-  },
-  slotSelect: {
-    background: "#020617",
-    color: "#f8fafc",
-    border: "1px solid rgba(148,163,184,0.18)",
-    borderRadius: 12,
-    padding: "11px 14px",
-    outline: "none",
-    fontWeight: 600,
-    width: "100%",
-  },
-  claimButton: {
-    border: "none",
-    borderRadius: 14,
-    padding: "14px 18px",
-    background: "#f97316",
-    color: "#fff",
-    fontWeight: 800,
-    cursor: "pointer",
-    minWidth: 170,
-    boxShadow: "0 6px 16px rgba(249,115,22,0.28)",
-  },
-  claimButtonDisabled: {
-    opacity: 0.7,
-    cursor: "not-allowed",
-  },
-  claimButtonClaimed: {
-    background: "rgba(148,163,184,0.14)",
-    color: "#94a3b8",
-    boxShadow: "none",
-    cursor: "not-allowed",
-  },
+  infoLabel: { color: "var(--mm-text-4)", fontSize: 10, fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".06em" },
+  infoValue: { color: "var(--mm-text-1)", fontSize: 14, fontWeight: 700 },
+  tagRow: { display: "flex", gap: 6, flexWrap: "wrap" },
   addressRow: {
-    marginTop: 12,
     display: "flex",
     alignItems: "center",
     gap: 10,
     flexWrap: "wrap",
   },
-  addressText: {
-    color: "#64748b",
-    fontSize: 13,
-    lineHeight: 1.4,
-    flex: 1,
-    minWidth: 0,
-  },
-  showOnMapBtn: {
-    flexShrink: 0,
-    padding: "6px 12px",
-    borderRadius: 10,
-    border: "1px solid rgba(249,115,22,0.3)",
-    background: "rgba(249,115,22,0.1)",
-    color: "#fdba74",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    fontFamily: "inherit",
+  addressText: { color: "var(--mm-text-4)", fontSize: 13, flex: 1, minWidth: 0, lineHeight: 1.4 },
+  cardFooter: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    alignItems: "flex-end",
+    flexWrap: "wrap",
+    borderTop: "1px solid var(--mm-border)",
+    paddingTop: 14,
+    marginTop: 2,
   },
 };

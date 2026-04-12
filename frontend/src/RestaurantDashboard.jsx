@@ -286,107 +286,114 @@ export default function RestaurantDashboard() {
   }, [selectedTab, activeListings, claimedListings, expiredListings]);
 
   return (
-    <div style={styles.page}>
-      <section style={styles.hero}>
+    <div className="mm-page-wrap">
+      {/* Hero */}
+      <div className="mm-page-hero" style={{ marginBottom: 24 }}>
         <div>
-          <p style={styles.eyebrow}>MealMatch • Restaurant Portal</p>
-          <h1 style={styles.heroTitle}>Restaurant Dashboard</h1>
-          <p style={styles.heroText}>
+          <p className="mm-page-hero-eyebrow">Restaurant Portal</p>
+          <h1 className="mm-page-hero-title">Restaurant Dashboard</h1>
+          <p className="mm-page-hero-subtitle">
             Create surplus food listings, manage statuses, and monitor active,
             claimed, and expired inventory from backend-synced data.
           </p>
         </div>
+        <div className="mm-page-hero-stat">
+          <div className="mm-page-hero-stat-num">{activeListings.length}</div>
+          <div className="mm-page-hero-stat-label">Currently Active</div>
+        </div>
+      </div>
 
-        <div style={styles.heroBadge}>
-          <div style={styles.heroBadgeNumber}>{activeListings.length}</div>
-          <div style={styles.heroBadgeLabel}>Currently Active</div>
-        </div>
-      </section>
+      {/* Stats grid */}
+      <div className="mm-stats-grid">
+        {[
+          { label: "Active Listings",    value: activeListings.length },
+          { label: "Claimed Listings",   value: claimedListings.length },
+          { label: "Expired Listings",   value: expiredListings.length },
+          { label: "Total Meals Posted", value: totalMeals },
+        ].map(({ label, value }) => (
+          <div key={label} className="mm-stats-card">
+            <p className="mm-stats-card-label">{label}</p>
+            <h3 className="mm-stats-card-value">{value}</h3>
+          </div>
+        ))}
+      </div>
 
-      <section style={styles.statsGrid}>
-        <div style={styles.statCard}>
-          <p style={styles.statLabel}>Active Listings</p>
-          <h3 style={styles.statValue}>{activeListings.length}</h3>
-        </div>
-        <div style={styles.statCard}>
-          <p style={styles.statLabel}>Claimed Listings</p>
-          <h3 style={styles.statValue}>{claimedListings.length}</h3>
-        </div>
-        <div style={styles.statCard}>
-          <p style={styles.statLabel}>Expired Listings</p>
-          <h3 style={styles.statValue}>{expiredListings.length}</h3>
-        </div>
-        <div style={styles.statCard}>
-          <p style={styles.statLabel}>Total Meals Posted</p>
-          <h3 style={styles.statValue}>{totalMeals}</h3>
-        </div>
-      </section>
-
-      <section style={styles.mainGrid}>
-        <div style={styles.formCard}>
-          <div style={styles.sectionHeader}>
-            <p style={styles.sectionKicker}>Listing Creation</p>
-            <h2 style={styles.sectionTitle}>Create New Listing</h2>
-            <p style={styles.sectionText}>
+      {/* Main grid: form + listings */}
+      <div style={s.mainGrid}>
+        {/* ── Create form ─────────────────────────────────── */}
+        <div className="mm-card" style={s.panelCard}>
+          <div style={s.sectionHeader}>
+            <p style={s.sectionKicker}>Listing Creation</p>
+            <h2 style={s.sectionTitle}>Create New Listing</h2>
+            <p style={s.sectionText}>
               Fill out the details below to publish a new surplus food listing.
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} style={styles.form}>
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Title</label>
+          <form onSubmit={handleSubmit} style={s.form}>
+            <div style={s.fieldGroup}>
+              <label className="mm-label" htmlFor="rd-title">Title</label>
               <input
+                id="rd-title"
                 type="text"
                 name="title"
                 placeholder="Example: Vegetarian Pasta Meals"
                 value={formData.title}
                 onChange={handleChange}
-                style={styles.input}
+                className="mm-input"
               />
             </div>
 
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Description</label>
+            <div style={s.fieldGroup}>
+              <label className="mm-label" htmlFor="rd-desc">Description</label>
               <textarea
+                id="rd-desc"
                 name="description"
                 placeholder="Describe the food and any pickup details"
                 value={formData.description}
                 onChange={handleChange}
-                style={styles.textarea}
+                className="mm-textarea"
+                style={{ minHeight: 100 }}
               />
             </div>
 
-            <div style={styles.row}>
-              <div style={styles.fieldGroupHalf}>
-                <label style={styles.label}>Quantity</label>
+            <div style={s.row}>
+              <div style={s.fieldGroupHalf}>
+                <label className="mm-label" htmlFor="rd-qty">Quantity</label>
                 <input
+                  id="rd-qty"
                   type="number"
                   name="quantity"
                   placeholder="10"
                   value={formData.quantity}
                   onChange={handleChange}
-                  style={styles.input}
+                  className="mm-input"
                   min="1"
                 />
               </div>
             </div>
 
-            <div style={styles.row}>
-              <div style={styles.fieldGroupHalf}>
-                <label style={styles.label}>Location Name <span style={{ color: "#64748b", fontWeight: 400 }}>(optional)</span></label>
+            <div style={s.row}>
+              <div style={s.fieldGroupHalf}>
+                <label className="mm-label" htmlFor="rd-loc">
+                  Location Name <span style={{ color: "var(--mm-text-4)", fontWeight: 400 }}>(optional)</span>
+                </label>
                 <input
+                  id="rd-loc"
                   type="text"
                   name="location_name"
                   placeholder="e.g. Stamp Student Union"
                   value={formData.location_name}
                   onChange={handleChange}
-                  style={styles.input}
+                  className="mm-input"
                 />
               </div>
             </div>
 
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Street Address <span style={{ color: "#64748b", fontWeight: 400 }}>(optional — enables map)</span></label>
+            <div style={s.fieldGroup}>
+              <label className="mm-label">
+                Street Address <span style={{ color: "var(--mm-text-4)", fontWeight: 400 }}>(optional — enables map)</span>
+              </label>
               <AddressAutocomplete
                 value={formData.address}
                 onAddressChange={handleAddressChange}
@@ -394,34 +401,30 @@ export default function RestaurantDashboard() {
                 existingAddresses={listings.map((l) => l.address).filter(Boolean)}
               />
               {formData.lat != null && (
-                <div style={styles.coordsHint}>
+                <div style={s.coordsHint}>
                   Coordinates saved: {formData.lat.toFixed(5)}, {formData.lng.toFixed(5)}
                 </div>
               )}
             </div>
 
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Dietary Tags</label>
-              <div style={styles.tagContainer}>
+            <div style={s.fieldGroup}>
+              <label className="mm-label">Dietary Tags</label>
+              <div style={s.tagContainer}>
                 {dietaryOptions.map((tag) => {
                   const selected = formData.dietary_tags.includes(tag);
-
                   return (
                     <button
                       key={tag}
                       type="button"
                       onClick={() => handleTagToggle(tag)}
-                      style={{
-                        ...styles.tagButton,
-                        ...(selected ? styles.tagButtonSelected : {}),
-                      }}
+                      className={`mm-btn mm-btn-sm ${selected ? "mm-btn-primary" : "mm-btn-ghost"}`}
                     >
                       {formatTag(tag)}
                     </button>
                   );
                 })}
               </div>
-              <div style={styles.customTagRow}>
+              <div style={s.customTagRow}>
                 <input
                   type="text"
                   placeholder="Add custom dietary tag"
@@ -433,25 +436,26 @@ export default function RestaurantDashboard() {
                       handleAddCustomTag();
                     }
                   }}
-                  style={{ ...styles.input, flex: 1 }}
+                  className="mm-input"
+                  style={{ flex: 1 }}
                 />
                 <button
                   type="button"
                   onClick={handleAddCustomTag}
-                  style={styles.addCustomTagButton}
+                  className="mm-btn mm-btn-info mm-btn-sm"
                 >
                   Add Tag
                 </button>
               </div>
-              {formData.dietary_tags.length > 0 ? (
-                <div style={styles.selectedTagsRow}>
+              {formData.dietary_tags.length > 0 && (
+                <div style={s.selectedTagsRow}>
                   {formData.dietary_tags.map((tag) => (
-                    <span key={tag} style={styles.selectedTagChip}>
+                    <span key={tag} style={s.selectedTagChip}>
                       {formatTag(tag)}
                       <button
                         type="button"
                         onClick={() => handleRemoveTag(tag)}
-                        style={styles.selectedTagRemoveButton}
+                        style={s.selectedTagRemoveBtn}
                         aria-label={`Remove ${formatTag(tag)} tag`}
                       >
                         ×
@@ -459,234 +463,223 @@ export default function RestaurantDashboard() {
                     </span>
                   ))}
                 </div>
-              ) : null}
+              )}
             </div>
 
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>
+            <div style={s.fieldGroup}>
+              <label className="mm-label">
                 Pickup Slots{" "}
-                <span style={{ color: "#64748b", fontWeight: 400 }}>(optional — recipients must select one)</span>
+                <span style={{ color: "var(--mm-text-4)", fontWeight: 400 }}>(optional — recipients must select one)</span>
               </label>
               {formData.pickup_slots.map((slot) => (
-                <div key={slot.tempId} style={slotRowStyle}>
+                <div key={slot.tempId} style={s.slotRow}>
                   <input
                     type="text"
                     placeholder="Label (e.g. 12pm – 1pm)"
                     value={slot.label}
                     onChange={(e) => handleSlotChange(slot.tempId, "label", e.target.value)}
-                    style={{ ...styles.input, flex: "1 1 130px", minWidth: 0 }}
+                    className="mm-input"
+                    style={{ flex: "1 1 130px", minWidth: 0 }}
                   />
                   <input
                     type="datetime-local"
                     value={slot.pickup_start}
                     onChange={(e) => handleSlotChange(slot.tempId, "pickup_start", e.target.value)}
-                    style={{ ...styles.input, flex: "1 1 160px", minWidth: 0 }}
+                    className="mm-input"
+                    style={{ flex: "1 1 160px", minWidth: 0 }}
                   />
                   <input
                     type="datetime-local"
                     value={slot.pickup_end}
                     onChange={(e) => handleSlotChange(slot.tempId, "pickup_end", e.target.value)}
-                    style={{ ...styles.input, flex: "1 1 160px", minWidth: 0 }}
+                    className="mm-input"
+                    style={{ flex: "1 1 160px", minWidth: 0 }}
                   />
                   <button
                     type="button"
                     onClick={() => handleRemoveSlot(slot.tempId)}
-                    style={removeSlotBtnStyle}
+                    style={s.removeSlotBtn}
                     aria-label="Remove slot"
                   >
                     ×
                   </button>
                 </div>
               ))}
-              <button type="button" onClick={handleAddSlot} style={addSlotBtnStyle}>
+              <button
+                type="button"
+                onClick={handleAddSlot}
+                className="mm-btn mm-btn-ghost mm-btn-sm"
+                style={{ alignSelf: "flex-start" }}
+              >
                 + Add pickup slot
               </button>
             </div>
 
-            <div style={styles.row}>
-              <div style={styles.fieldGroupHalf}>
-                <label style={styles.label}>Pickup Start Time</label>
+            <div style={s.row}>
+              <div style={s.fieldGroupHalf}>
+                <label className="mm-label" htmlFor="rd-start">Pickup Start Time</label>
                 <input
+                  id="rd-start"
                   type="datetime-local"
                   name="pickup_start"
                   value={formData.pickup_start}
                   onChange={handleChange}
-                  style={styles.input}
+                  className="mm-input"
                 />
               </div>
-
-              <div style={styles.fieldGroupHalf}>
-                <label style={styles.label}>Pickup End Time</label>
+              <div style={s.fieldGroupHalf}>
+                <label className="mm-label" htmlFor="rd-end">Pickup End Time</label>
                 <input
+                  id="rd-end"
                   type="datetime-local"
                   name="pickup_end"
                   value={formData.pickup_end}
                   onChange={handleChange}
-                  style={styles.input}
+                  className="mm-input"
                 />
               </div>
             </div>
 
-            {error ? <div style={styles.errorBox}>{error}</div> : null}
-            {successMessage ? <div style={styles.successBox}>{successMessage}</div> : null}
+            {error && <div className="mm-alert mm-alert-error" role="alert">{error}</div>}
+            {successMessage && <div className="mm-alert mm-alert-success" role="status">{successMessage}</div>}
 
-            <button type="submit" style={styles.submitButton} disabled={isSubmitting}>
-              {isSubmitting ? "Creating Listing..." : "Create Listing"}
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="mm-btn mm-btn-primary mm-btn-lg mm-btn-full"
+            >
+              {isSubmitting ? "Creating Listing…" : "Create Listing"}
             </button>
           </form>
         </div>
 
-        <div style={styles.listingsCard}>
-          <div style={{ ...styles.sectionHeader, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+        {/* ── Listings management ──────────────────────────── */}
+        <div className="mm-card" style={s.panelCard}>
+          <div style={{ ...s.sectionHeader, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
             <div>
-              <p style={styles.sectionKicker}>Listing Management</p>
-              <h2 style={styles.sectionTitle}>Manage Listings</h2>
-              <p style={styles.sectionText}>
+              <p style={s.sectionKicker}>Listing Management</p>
+              <h2 style={s.sectionTitle}>Manage Listings</h2>
+              <p style={s.sectionText}>
                 View active, claimed, and expired listings synced from backend.
               </p>
             </div>
             <button
               onClick={() => fetchListings()}
               disabled={isFetching}
-              style={{
-                ...styles.refreshButton,
-                ...(isFetching ? styles.refreshButtonDisabled : {}),
-              }}
+              className="mm-btn mm-btn-ghost mm-btn-sm"
+              style={{ flexShrink: 0 }}
             >
-              {isFetching ? "Refreshing..." : "Refresh"}
+              {isFetching ? "Refreshing…" : "Refresh"}
             </button>
           </div>
 
-          <div style={styles.tabs}>
-            <button
-              onClick={() => setSelectedTab("active")}
-              style={{
-                ...styles.tabButton,
-                ...(selectedTab === "active" ? styles.activeTab : {}),
-              }}
-            >
-              Active ({tabCounts.active})
-            </button>
-            <button
-              onClick={() => setSelectedTab("claimed")}
-              style={{
-                ...styles.tabButton,
-                ...(selectedTab === "claimed" ? styles.activeTab : {}),
-              }}
-            >
-              Claimed ({tabCounts.claimed})
-            </button>
-            <button
-              onClick={() => setSelectedTab("expired")}
-              style={{
-                ...styles.tabButton,
-                ...(selectedTab === "expired" ? styles.activeTab : {}),
-              }}
-            >
-              Expired ({tabCounts.expired})
-            </button>
+          {/* Tabs */}
+          <div style={s.tabs}>
+            {[
+              { key: "active",  label: `Active (${tabCounts.active})` },
+              { key: "claimed", label: `Claimed (${tabCounts.claimed})` },
+              { key: "expired", label: `Expired (${tabCounts.expired})` },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setSelectedTab(key)}
+                className={`mm-btn mm-btn-sm ${selectedTab === key ? "mm-btn-primary" : "mm-btn-ghost"}`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
+          {/* Content */}
           {isLoading ? (
-            <div style={styles.emptyState}>Loading listings...</div>
-          ) : error ? (
-            <div style={styles.emptyState}>
-              <h3 style={styles.emptyTitle}>Failed to load listings</h3>
-              <p style={styles.emptyText}>{error}</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {[1, 2].map((i) => (
+                <div key={i} className="mm-card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div className="mm-skeleton" style={{ height: 12, width: "30%" }} />
+                  <div className="mm-skeleton" style={{ height: 18, width: "65%" }} />
+                  <div className="mm-skeleton" style={{ height: 12, width: "80%" }} />
+                </div>
+              ))}
             </div>
           ) : displayedListings.length === 0 ? (
-            <div style={styles.emptyState}>
-              <h3 style={styles.emptyTitle}>No {selectedTab} listings</h3>
-              <p style={styles.emptyText}>
+            <div style={s.emptyState}>
+              <h3 style={{ margin: "0 0 8px", color: "var(--mm-text-1)", fontSize: 18, fontWeight: 700 }}>
+                No {selectedTab} listings
+              </h3>
+              <p style={{ margin: 0, color: "var(--mm-text-4)" }}>
                 Listings in this category will appear here.
               </p>
             </div>
           ) : (
-            <div style={styles.listingsColumn}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               {displayedListings.map((listing) => (
-                <div key={listing.id} style={styles.listingCard}>
-                  <div style={styles.listingHeader}>
-                    <div>
-                      <p style={styles.listingId}>Listing #{listing.id}</p>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "10px",
-                          flexWrap: "wrap",
-                          marginBottom: "6px",
-                        }}
-                      >
-                        <h3 style={{ ...styles.listingTitle, marginBottom: 0 }}>
+                <div key={listing.id} className="mm-card" style={s.listingCard}>
+                  <div style={s.listingHeader}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={s.listingId}>Listing #{listing.id}</p>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
+                        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "var(--mm-text-1)" }}>
                           {listing.title}
                         </h3>
                         {listing.is_urgent && (
-                          <span
-                            style={{
-                              padding: "4px 10px",
-                              borderRadius: "999px",
-                              background: "rgba(249,115,22,0.16)",
-                              color: "#f97316",
-                              fontSize: "12px",
-                              fontWeight: 700,
-                              border: "1px solid rgba(249,115,22,0.3)",
-                              flexShrink: 0,
-                            }}
-                          >
-                            ⚡ Urgent
-                          </span>
+                          <span className="mm-badge mm-badge-brand" style={{ fontSize: 11 }}>⚡ Urgent</span>
                         )}
                       </div>
-                      <p style={styles.listingDescription}>{listing.description}</p>
+                      <p style={s.listingDescription}>{listing.description}</p>
                     </div>
-                    <span style={styles.statusPill}>{listing.status}</span>
+                    <span
+                      className={`mm-badge ${
+                        listing.status === "active" ? "mm-badge-success" :
+                        listing.status === "claimed" ? "mm-badge-brand" :
+                        "mm-badge-neutral"
+                      }`}
+                      style={{ textTransform: "capitalize", flexShrink: 0 }}
+                    >
+                      {listing.status}
+                    </span>
                   </div>
 
-                  <div style={styles.listingMetaGrid}>
-                    <div style={styles.metaBox}>
-                      <span style={styles.metaLabel}>Quantity</span>
-                      <span style={styles.metaValue}>{listing.quantity}</span>
+                  <div style={s.metaGrid}>
+                    <div style={s.metaBox}>
+                      <span style={s.metaLabel}>Quantity</span>
+                      <span style={s.metaValue}>{listing.quantity}</span>
                     </div>
-                    <div style={styles.metaBox}>
-                      <span style={styles.metaLabel}>Pickup Start</span>
-                      <span style={styles.metaValueSmall}>
-                        {formatDate(listing.pickup_start)}
-                      </span>
+                    <div style={s.metaBox}>
+                      <span style={s.metaLabel}>Pickup Start</span>
+                      <span style={s.metaValueSmall}>{formatDate(listing.pickup_start)}</span>
                     </div>
-                    <div style={styles.metaBox}>
-                      <span style={styles.metaLabel}>Pickup End</span>
-                      <span style={styles.metaValueSmall}>
-                        {formatDate(listing.pickup_end)}
-                      </span>
+                    <div style={s.metaBox}>
+                      <span style={s.metaLabel}>Pickup End</span>
+                      <span style={s.metaValueSmall}>{formatDate(listing.pickup_end)}</span>
                     </div>
                   </div>
 
-                  <div style={styles.tagContainer}>
+                  <div style={s.tagContainer}>
                     {listing.dietary_tags?.length ? (
                       listing.dietary_tags.map((tag) => (
-                        <span key={tag} style={styles.listingTag}>
+                        <span key={tag} className="mm-badge mm-badge-info" style={{ fontSize: 11 }}>
                           {formatTag(tag)}
                         </span>
                       ))
                     ) : (
-                      <span style={styles.listingTag}>No Tags</span>
+                      <span style={{ color: "var(--mm-text-4)", fontSize: 13 }}>No tags</span>
                     )}
                   </div>
 
-                  {selectedTab === "active" ? (
+                  {selectedTab === "active" && (
                     <>
                       {predictions[listing.id] && (
-                        <div style={predictionBoxStyle}>
-                          <span style={predictionLabelStyle}>Demand prediction</span>
-                          <span style={predictionProbStyle}>
+                        <div style={s.predictionBox}>
+                          <span style={s.predictionLabel}>Demand prediction</span>
+                          <span style={s.predictionProb}>
                             {Math.round(predictions[listing.id].claim_probability * 100)}% claim probability
                           </span>
-                          <span style={predictionEtaStyle}>
+                          <span style={s.predictionEta}>
                             Est. {predictions[listing.id].estimated_minutes_to_claim} min to claim ·{" "}
                             <em>{predictions[listing.id].confidence} confidence</em>
                           </span>
                           {predictions[listing.id].factors?.length > 0 && (
-                            <ul style={predictionFactorListStyle}>
+                            <ul style={s.predictionFactors}>
                               {predictions[listing.id].factors.map((f, i) => (
                                 <li key={i}>{f}</li>
                               ))}
@@ -694,34 +687,34 @@ export default function RestaurantDashboard() {
                           )}
                         </div>
                       )}
-                      <div style={styles.cardActions}>
+                      <div style={s.cardActions}>
                         <button
                           onClick={() => handleFetchPrediction(listing.id)}
-                          style={predictBtnStyle}
+                          className="mm-btn mm-btn-partner mm-btn-sm"
                         >
                           Predict Demand
                         </button>
                         <button
                           onClick={() => handleStatusUpdate(listing.id, "claimed")}
-                          style={styles.claimButton}
+                          className="mm-btn mm-btn-primary mm-btn-sm"
                         >
                           Mark Claimed
                         </button>
                         <button
                           onClick={() => handleStatusUpdate(listing.id, "expired")}
-                          style={styles.expireButton}
+                          className="mm-btn mm-btn-ghost mm-btn-sm"
                         >
                           Mark Expired
                         </button>
                       </div>
                     </>
-                  ) : null}
+                  )}
                 </div>
               ))}
             </div>
           )}
         </div>
-      </section>
+      </div>
     </div>
   );
 }
@@ -741,533 +734,136 @@ function formatDate(dateString) {
   return new Date(dateString).toLocaleString();
 }
 
-const styles = {
-  page: {
-    color: "#e5eefc",
-  },
+const s = {
   hero: {
-    maxWidth: "1200px",
-    margin: "0 auto 22px",
-    borderRadius: "28px",
-    padding: "32px",
-    background:
-      "radial-gradient(circle at top right, rgba(96,165,250,0.28), transparent 28%), linear-gradient(135deg, #020617 0%, #0f172a 45%, #111827 100%)",
-    border: "1px solid rgba(148,163,184,0.18)",
-    boxShadow: "0 28px 80px rgba(2, 6, 23, 0.42)",
+    background: "radial-gradient(circle at top right, rgba(96,165,250,.22), transparent 28%), linear-gradient(135deg, var(--mm-surface-1), var(--mm-surface-2))",
+    border: "1px solid var(--mm-border)",
+    borderRadius: "var(--mm-r-2xl)",
+    padding: "28px 32px",
+    boxShadow: "var(--mm-shadow-lg)",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: "24px",
+    gap: 24,
     flexWrap: "wrap",
+    marginBottom: 24,
   },
-  eyebrow: {
-    margin: "0 0 10px 0",
-    fontSize: "12px",
-    letterSpacing: "0.14em",
-    textTransform: "uppercase",
-    color: "rgba(191,219,254,0.9)",
-    fontWeight: 700,
-  },
-  heroTitle: {
-    margin: "0 0 12px 0",
-    fontSize: "42px",
-    lineHeight: 1.05,
-    color: "#f8fbff",
-  },
-  heroText: {
-    margin: 0,
-    maxWidth: "700px",
-    fontSize: "16px",
-    lineHeight: 1.7,
-    color: "rgba(226,232,240,0.92)",
-  },
-  heroBadge: {
-    minWidth: "180px",
-    padding: "22px",
-    borderRadius: "22px",
-    background: "rgba(255,255,255,0.06)",
-    border: "1px solid rgba(148,163,184,0.18)",
-    textAlign: "center",
-  },
-  heroBadgeNumber: {
-    fontSize: "36px",
-    fontWeight: 800,
-    color: "#ffffff",
-  },
-  heroBadgeLabel: {
-    fontSize: "13px",
-    color: "#cbd5e1",
-  },
+  eyebrow: { margin: "0 0 10px", fontSize: 11, fontWeight: 800, letterSpacing: ".14em", textTransform: "uppercase", color: "rgba(191,219,254,.8)" },
+  title: { margin: "0 0 10px", fontSize: "clamp(1.7rem,3.5vw,2.5rem)", fontWeight: 800, color: "var(--mm-text-1)", letterSpacing: "-.025em" },
+  subtitle: { margin: 0, maxWidth: 560, color: "var(--mm-text-3)", lineHeight: 1.65, fontSize: 15 },
+  heroStat: { minWidth: 140, padding: "18px 22px", borderRadius: "var(--mm-r-xl)", background: "rgba(255,255,255,.05)", border: "1px solid var(--mm-border-md)", textAlign: "center", flexShrink: 0 },
+  heroStatNum: { fontSize: 34, fontWeight: 800, color: "#fff", lineHeight: 1 },
+  heroStatLabel: { fontSize: 12, color: "var(--mm-text-3)", marginTop: 6 },
   statsGrid: {
-    maxWidth: "1200px",
-    margin: "0 auto 24px",
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: "16px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+    gap: 14,
+    marginBottom: 24,
   },
-  statCard: {
-    background: "rgba(15,23,42,0.72)",
-    border: "1px solid rgba(249,115,22,0.12)",
-    borderRadius: "22px",
-    padding: "20px",
-    boxShadow: "0 18px 36px rgba(2, 6, 23, 0.18)",
-  },
-  statLabel: {
-    margin: "0 0 6px 0",
-    color: "#fdba74",
-    fontSize: "13px",
-    textTransform: "uppercase",
-    letterSpacing: "0.08em",
-    fontWeight: 700,
-  },
-  statValue: {
-    margin: 0,
-    fontSize: "32px",
-    fontWeight: 800,
-    color: "#f8fbff",
-  },
+  statCard: { padding: "18px 20px" },
+  statLabel: { margin: "0 0 6px", color: "var(--mm-brand)", fontSize: 12, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 700 },
+  statValue: { margin: 0, fontSize: 30, fontWeight: 800, color: "var(--mm-text-1)" },
   mainGrid: {
-    maxWidth: "1200px",
-    margin: "0 auto",
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "24px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))",
+    gap: 22,
     alignItems: "start",
   },
-  formCard: {
-    background: "rgba(15,23,42,0.72)",
-    border: "1px solid rgba(148,163,184,0.12)",
-    borderRadius: "26px",
-    padding: "24px",
-    boxShadow: "0 24px 48px rgba(2, 6, 23, 0.24)",
-  },
-  listingsCard: {
-    background: "rgba(15,23,42,0.72)",
-    border: "1px solid rgba(148,163,184,0.12)",
-    borderRadius: "26px",
-    padding: "24px",
-    boxShadow: "0 24px 48px rgba(2, 6, 23, 0.24)",
-  },
-  sectionHeader: {
-    marginBottom: "20px",
-  },
-  sectionKicker: {
-    margin: "0 0 6px 0",
-    fontSize: "12px",
-    textTransform: "uppercase",
-    letterSpacing: "0.12em",
-    color: "#fb923c",
-    fontWeight: 700,
-  },
-  sectionTitle: {
-    margin: "0 0 8px 0",
-    fontSize: "28px",
-    color: "#f8fbff",
-  },
-  sectionText: {
-    margin: 0,
-    color: "rgba(203,213,225,0.82)",
-    lineHeight: 1.6,
-    fontSize: "15px",
-  },
-  form: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "18px",
-  },
-  fieldGroup: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-  },
-  fieldGroupHalf: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-    minWidth: "220px",
-  },
-  label: {
-    fontSize: "14px",
-    fontWeight: 600,
-    color: "#dbeafe",
-  },
-  input: {
-    width: "100%",
-    padding: "14px 16px",
-    borderRadius: "16px",
-    border: "1px solid rgba(148,163,184,0.18)",
-    background: "rgba(2,6,23,0.52)",
-    color: "#f8fbff",
-    fontSize: "15px",
-    outline: "none",
-    boxSizing: "border-box",
-  },
-  textarea: {
-    width: "100%",
-    minHeight: "124px",
-    padding: "14px 16px",
-    borderRadius: "16px",
-    border: "1px solid rgba(148,163,184,0.18)",
-    background: "rgba(2,6,23,0.52)",
-    color: "#f8fbff",
-    fontSize: "15px",
-    outline: "none",
-    resize: "vertical",
-    boxSizing: "border-box",
-  },
-  row: {
-    display: "flex",
-    gap: "16px",
-    flexWrap: "wrap",
-  },
-  tagContainer: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "10px",
-  },
-  tagButton: {
-    padding: "10px 14px",
-    borderRadius: "999px",
-    border: "1px solid rgba(148,163,184,0.18)",
-    background: "rgba(255,255,255,0.04)",
-    color: "#cbd5e1",
-    cursor: "pointer",
-    fontWeight: 600,
-    fontSize: "14px",
-  },
-  tagButtonSelected: {
-    background: "#f97316",
-    color: "white",
-    border: "1px solid rgba(249,115,22,0.6)",
-    boxShadow: "0 4px 12px rgba(249,115,22,0.25)",
-  },
-  customTagRow: {
-    display: "flex",
-    gap: "10px",
-    alignItems: "stretch",
-    flexWrap: "wrap",
-  },
-  addCustomTagButton: {
-    padding: "0 16px",
-    borderRadius: "16px",
-    border: "1px solid rgba(96,165,250,0.28)",
-    background: "rgba(59,130,246,0.12)",
-    color: "#bfdbfe",
-    cursor: "pointer",
-    fontWeight: 700,
-    fontSize: "14px",
-    minHeight: "48px",
-  },
-  selectedTagsRow: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "10px",
-  },
+  panelCard: { padding: 24 },
+  sectionHeader: { marginBottom: 20 },
+  sectionKicker: { margin: "0 0 6px", fontSize: 11, textTransform: "uppercase", letterSpacing: ".12em", color: "var(--mm-brand)", fontWeight: 700 },
+  sectionTitle: { margin: "0 0 8px", fontSize: 22, fontWeight: 800, color: "var(--mm-text-1)" },
+  sectionText: { margin: 0, color: "var(--mm-text-3)", lineHeight: 1.6, fontSize: 14 },
+  form: { display: "flex", flexDirection: "column", gap: 16 },
+  fieldGroup: { display: "flex", flexDirection: "column", gap: 7 },
+  fieldGroupHalf: { flex: 1, display: "flex", flexDirection: "column", gap: 7, minWidth: 200 },
+  row: { display: "flex", gap: 14, flexWrap: "wrap" },
+  tagContainer: { display: "flex", flexWrap: "wrap", gap: 8 },
+  customTagRow: { display: "flex", gap: 8, alignItems: "stretch", flexWrap: "wrap", marginTop: 8 },
+  selectedTagsRow: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 },
   selectedTagChip: {
     display: "inline-flex",
     alignItems: "center",
-    gap: "8px",
-    padding: "8px 12px",
-    borderRadius: "999px",
-    background: "rgba(249,115,22,0.12)",
-    border: "1px solid rgba(249,115,22,0.22)",
-    color: "#fdba74",
+    gap: 6,
+    padding: "6px 10px",
+    borderRadius: "var(--mm-r-full)",
+    background: "var(--mm-brand-dim)",
+    border: "1px solid var(--mm-brand-ring)",
+    color: "var(--mm-brand)",
     fontWeight: 600,
-    fontSize: "13px",
+    fontSize: 12,
   },
-  selectedTagRemoveButton: {
+  selectedTagRemoveBtn: {
     border: "none",
     background: "transparent",
     color: "inherit",
     cursor: "pointer",
-    fontSize: "16px",
+    fontSize: 15,
     lineHeight: 1,
     padding: 0,
   },
-  errorBox: {
-    background: "rgba(127,29,29,0.32)",
-    color: "#fecaca",
-    border: "1px solid rgba(248,113,113,0.26)",
-    padding: "12px 14px",
-    borderRadius: "14px",
-    fontSize: "14px",
-  },
-  successBox: {
-    background: "rgba(20,83,45,0.3)",
-    color: "#bbf7d0",
-    border: "1px solid rgba(74,222,128,0.22)",
-    padding: "12px 14px",
-    borderRadius: "14px",
-    fontSize: "14px",
-  },
-  submitButton: {
-    padding: "15px 20px",
-    borderRadius: "16px",
-    border: "none",
-    background: "#f97316",
-    color: "white",
+  coordsHint: { fontSize: 12, color: "var(--mm-brand)", marginTop: 4, fontWeight: 600 },
+  slotRow: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 },
+  removeSlotBtn: {
+    flexShrink: 0,
+    width: 32,
+    height: 32,
+    borderRadius: "50%",
+    border: "1px solid var(--mm-error-ring)",
+    background: "var(--mm-error-dim)",
+    color: "var(--mm-error)",
+    fontSize: 18,
+    lineHeight: 1,
     cursor: "pointer",
-    fontWeight: 800,
-    fontSize: "15px",
-    boxShadow: "0 8px 20px rgba(249,115,22,0.3)",
-  },
-  tabs: {
     display: "flex",
-    gap: "10px",
-    flexWrap: "wrap",
-    marginBottom: "18px",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  tabButton: {
-    padding: "10px 14px",
-    borderRadius: "999px",
-    border: "1px solid rgba(148,163,184,0.18)",
-    background: "rgba(255,255,255,0.04)",
-    color: "#cbd5e1",
-    cursor: "pointer",
-    fontWeight: 700,
-    fontSize: "14px",
-  },
-  activeTab: {
-    background: "#f97316",
-    color: "white",
-    border: "1px solid rgba(234,88,12,0.8)",
-  },
+  tabs: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 },
   emptyState: {
-    padding: "34px 20px",
-    borderRadius: "20px",
-    background: "rgba(2,6,23,0.44)",
-    border: "1px dashed rgba(148,163,184,0.18)",
+    padding: "32px 20px",
+    borderRadius: "var(--mm-r-xl)",
+    background: "var(--mm-surface-2)",
+    border: "1.5px dashed var(--mm-border-md)",
     textAlign: "center",
-    color: "#cbd5e1",
   },
-  emptyTitle: {
-    margin: "0 0 8px 0",
-    color: "#f8fbff",
-  },
-  emptyText: {
-    margin: 0,
-    color: "rgba(203,213,225,0.82)",
-  },
-  listingsColumn: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "16px",
-  },
-  listingCard: {
-    border: "1px solid rgba(148,163,184,0.16)",
-    borderRadius: "22px",
-    padding: "18px",
-    background:
-      "linear-gradient(180deg, rgba(30,41,59,0.88) 0%, rgba(15,23,42,0.94) 100%)",
-    boxShadow: "0 16px 34px rgba(2, 6, 23, 0.22)",
-  },
+  listingCard: { padding: 18, display: "flex", flexDirection: "column", gap: 12 },
   listingHeader: {
     display: "flex",
     justifyContent: "space-between",
-    gap: "16px",
+    gap: 14,
     alignItems: "flex-start",
-    marginBottom: "16px",
     flexWrap: "wrap",
   },
-  listingId: {
-    margin: "0 0 6px 0",
-    color: "#fb923c",
-    fontSize: "12px",
-    textTransform: "uppercase",
-    letterSpacing: "0.08em",
-    fontWeight: 700,
-  },
-  listingTitle: {
-    margin: "0 0 6px 0",
-    fontSize: "22px",
-    color: "#f8fbff",
-  },
-  listingDescription: {
-    margin: 0,
-    color: "rgba(203,213,225,0.82)",
-    lineHeight: 1.6,
-  },
-  statusPill: {
-    padding: "8px 12px",
-    borderRadius: "999px",
-    background: "rgba(249,115,22,0.18)",
-    color: "#fed7aa",
-    fontSize: "13px",
-    fontWeight: 700,
-    textTransform: "capitalize",
-    border: "1px solid rgba(249,115,22,0.18)",
-  },
-  listingMetaGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-    gap: "12px",
-    marginBottom: "14px",
-  },
+  listingId: { margin: "0 0 4px", color: "var(--mm-brand)", fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 700 },
+  listingDescription: { margin: "4px 0 0", color: "var(--mm-text-3)", lineHeight: 1.55, fontSize: 13 },
+  metaGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10 },
   metaBox: {
-    background: "rgba(2,6,23,0.46)",
-    border: "1px solid rgba(148,163,184,0.14)",
-    borderRadius: "16px",
-    padding: "12px",
+    background: "var(--mm-surface-2)",
+    border: "1px solid var(--mm-border)",
+    borderRadius: "var(--mm-r-lg)",
+    padding: "10px 12px",
     display: "flex",
     flexDirection: "column",
-    gap: "4px",
+    gap: 4,
   },
-  metaLabel: {
-    fontSize: "12px",
-    color: "#fdba74",
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
-    fontWeight: 700,
-  },
-  metaValue: {
-    fontSize: "24px",
-    fontWeight: 800,
-    color: "#f8fbff",
-  },
-  metaValueSmall: {
-    fontSize: "14px",
-    fontWeight: 600,
-    color: "#e2e8f0",
-    lineHeight: 1.5,
-  },
-  listingTag: {
-    padding: "8px 12px",
-    borderRadius: "999px",
-    background: "rgba(255,255,255,0.05)",
-    color: "#dbeafe",
-    fontSize: "13px",
-    fontWeight: 600,
-    border: "1px solid rgba(148,163,184,0.14)",
-  },
-  refreshButton: {
-    padding: "9px 16px",
-    borderRadius: "12px",
-    border: "1px solid rgba(249,115,22,0.28)",
-    background: "rgba(249,115,22,0.08)",
-    color: "#fb923c",
-    cursor: "pointer",
-    fontWeight: 700,
-    fontSize: "13px",
-    flexShrink: 0,
-    whiteSpace: "nowrap",
-  },
-  refreshButtonDisabled: {
-    opacity: 0.5,
-    cursor: "not-allowed",
-  },
-  cardActions: {
-    marginTop: "16px",
+  metaLabel: { fontSize: 10, color: "var(--mm-brand)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 700 },
+  metaValue: { fontSize: 22, fontWeight: 800, color: "var(--mm-text-1)" },
+  metaValueSmall: { fontSize: 13, fontWeight: 600, color: "var(--mm-text-2)", lineHeight: 1.5 },
+  predictionBox: {
+    padding: "12px 14px",
+    borderRadius: "var(--mm-r-lg)",
+    background: "rgba(168,85,247,.08)",
+    border: "1px solid rgba(168,85,247,.2)",
     display: "flex",
-    gap: "10px",
-    justifyContent: "flex-end",
-    flexWrap: "wrap",
+    flexDirection: "column",
+    gap: 4,
   },
-  claimButton: {
-    padding: "11px 14px",
-    borderRadius: "12px",
-    border: "none",
-    background: "#f97316",
-    color: "#ffffff",
-    cursor: "pointer",
-    fontWeight: 700,
-  },
-  expireButton: {
-    padding: "11px 14px",
-    borderRadius: "12px",
-    border: "none",
-    background: "#f97316",
-    color: "#ffffff",
-    cursor: "pointer",
-    fontWeight: 700,
-  },
-  coordsHint: {
-    fontSize: "12px",
-    color: "#22c55e",
-    marginTop: "4px",
-    fontWeight: 600,
-  },
-};
-
-// ---------------------------------------------------------------------------
-// Slot row styles (plain objects so they work inline without emotion/styled)
-// ---------------------------------------------------------------------------
-
-const slotRowStyle = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-  alignItems: "center",
-  marginBottom: 8,
-};
-
-const removeSlotBtnStyle = {
-  flexShrink: 0,
-  width: 32,
-  height: 32,
-  borderRadius: "50%",
-  border: "1px solid rgba(239,68,68,0.3)",
-  background: "rgba(239,68,68,0.1)",
-  color: "#fca5a5",
-  fontSize: 18,
-  lineHeight: 1,
-  cursor: "pointer",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-};
-
-const addSlotBtnStyle = {
-  padding: "9px 14px",
-  borderRadius: 12,
-  border: "1px solid rgba(249,115,22,0.3)",
-  background: "rgba(249,115,22,0.08)",
-  color: "#fb923c",
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: "pointer",
-  alignSelf: "flex-start",
-};
-
-const predictBtnStyle = {
-  padding: "8px 14px",
-  borderRadius: 10,
-  border: "1px solid rgba(168,85,247,0.3)",
-  background: "rgba(168,85,247,0.1)",
-  color: "#c084fc",
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: "pointer",
-  fontFamily: "inherit",
-};
-
-const predictionBoxStyle = {
-  marginBottom: 12,
-  padding: "12px 16px",
-  borderRadius: 12,
-  background: "rgba(168,85,247,0.08)",
-  border: "1px solid rgba(168,85,247,0.2)",
-  display: "flex",
-  flexDirection: "column",
-  gap: 4,
-};
-
-const predictionLabelStyle = {
-  fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em",
-  color: "#a855f7", fontWeight: 700,
-};
-
-const predictionProbStyle = {
-  fontSize: 16, fontWeight: 800, color: "#e9d5ff",
-};
-
-const predictionEtaStyle = {
-  fontSize: 13, color: "#c084fc",
-};
-
-const predictionFactorListStyle = {
-  margin: "4px 0 0", paddingLeft: 18, fontSize: 12, color: "#a78bfa",
-  lineHeight: 1.6,
+  predictionLabel: { fontSize: 10, textTransform: "uppercase", letterSpacing: ".08em", color: "#7C3AED", fontWeight: 700 },
+  predictionProb: { fontSize: 15, fontWeight: 800, color: "#5B21B6" },
+  predictionEta: { fontSize: 12, color: "#6D28D9" },
+  predictionFactors: { margin: "4px 0 0", paddingLeft: 18, fontSize: 12, color: "#7C3AED", lineHeight: 1.6 },
+  cardActions: { display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap", paddingTop: 4 },
 };
 
 // ---------------------------------------------------------------------------
@@ -1390,27 +986,27 @@ function AddressAutocomplete({ value, onAddressChange, onSelect, existingAddress
         onKeyDown={handleKeyDown}
         onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
         onBlur={() => setTimeout(() => setShowDropdown(false), 160)}
-        style={styles.input}
+        className="mm-input"
         autoComplete="off"
       />
       {isSearching && (
-        <div style={acStyles.spinner}>Searching…</div>
+        <div style={ac.spinner}>Searching…</div>
       )}
       {showDropdown && suggestions.length > 0 && (
-        <ul style={acStyles.dropdown}>
+        <ul style={ac.dropdown}>
           {suggestions.map((s, i) => (
             <li
               key={i}
               style={{
-                ...acStyles.item,
-                ...(i === activeIndex ? acStyles.itemActive : {}),
+                ...ac.item,
+                ...(i === activeIndex ? ac.itemActive : {}),
               }}
               onMouseDown={() => selectSuggestion(s)}
               onMouseEnter={() => setActiveIndex(i)}
             >
-              <span style={acStyles.itemLabel}>{s.label}</span>
-              {s.source === "local" && <span style={acStyles.badge}>saved</span>}
-              {s.lat != null && <span style={acStyles.coordBadge}>⊙</span>}
+              <span style={ac.itemLabel}>{s.label}</span>
+              {s.source === "local" && <span style={ac.badge}>saved</span>}
+              {s.lat != null && <span style={ac.coordBadge}>⊙</span>}
             </li>
           ))}
         </ul>
@@ -1419,14 +1015,14 @@ function AddressAutocomplete({ value, onAddressChange, onSelect, existingAddress
   );
 }
 
-const acStyles = {
+const ac = {
   spinner: {
     position: "absolute",
     right: 14,
     top: "50%",
     transform: "translateY(-50%)",
-    fontSize: "12px",
-    color: "#64748b",
+    fontSize: 12,
+    color: "var(--mm-text-4)",
     pointerEvents: "none",
   },
   dropdown: {
@@ -1435,30 +1031,30 @@ const acStyles = {
     left: 0,
     right: 0,
     zIndex: 200,
-    background: "rgba(15,23,42,0.98)",
-    border: "1px solid rgba(148,163,184,0.22)",
-    borderRadius: "14px",
-    padding: "6px",
+    background: "var(--mm-surface-2)",
+    border: "1px solid var(--mm-border-md)",
+    borderRadius: "var(--mm-r-xl)",
+    padding: 6,
     listStyle: "none",
     margin: 0,
-    boxShadow: "0 12px 32px rgba(2,6,23,0.5)",
+    boxShadow: "var(--mm-shadow-xl)",
     backdropFilter: "blur(12px)",
-    maxHeight: "260px",
+    maxHeight: 260,
     overflowY: "auto",
   },
   item: {
     display: "flex",
     alignItems: "center",
-    gap: "8px",
+    gap: 8,
     padding: "10px 12px",
-    borderRadius: "10px",
+    borderRadius: "var(--mm-r-md)",
     cursor: "pointer",
-    color: "#e2e8f0",
-    fontSize: "14px",
+    color: "var(--mm-text-2)",
+    fontSize: 14,
   },
   itemActive: {
-    background: "rgba(249,115,22,0.14)",
-    color: "#fdba74",
+    background: "var(--mm-brand-dim)",
+    color: "var(--mm-brand)",
   },
   itemLabel: {
     flex: 1,
@@ -1468,18 +1064,17 @@ const acStyles = {
   },
   badge: {
     flexShrink: 0,
-    fontSize: "10px",
+    fontSize: 10,
     fontWeight: 700,
     padding: "2px 6px",
-    borderRadius: "6px",
-    background: "rgba(34,197,94,0.14)",
-    color: "#86efac",
-    border: "1px solid rgba(34,197,94,0.2)",
+    borderRadius: 6,
+    background: "var(--mm-success-dim)",
+    color: "#15803D",
+    border: "1px solid var(--mm-success-ring)",
   },
   coordBadge: {
     flexShrink: 0,
-    fontSize: "14px",
-    color: "#38bdf8",
-    title: "Has coordinates",
+    fontSize: 14,
+    color: "var(--mm-info)",
   },
 };

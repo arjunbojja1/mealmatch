@@ -5,28 +5,62 @@ const ROLE_HOME = { recipient: '/browse', restaurant: '/restaurant', admin: '/ad
 
 export default function UnauthorizedPage() {
   const { user, logout } = useAuth()
-  const navigate = useNavigate()
-
-  function handleGoHome() {
-    navigate(ROLE_HOME[user?.role] || '/browse', { replace: true })
-  }
+  const navigate         = useNavigate()
 
   return (
-    <div style={s.page}>
-      <div style={s.card}>
-        <div style={s.icon}>⛔</div>
-        <h1 style={s.heading}>Access denied</h1>
-        <p style={s.text}>
-          Your role <strong style={s.role}>{user?.role || 'unknown'}</strong> does not have
-          permission to view this page.
+    <div style={{
+      minHeight: '100svh',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'var(--mm-bg)',
+      padding: 24,
+    }}>
+      <div style={{
+        maxWidth: 440, width: '100%',
+        background: 'var(--mm-surface-1)',
+        border: '1px solid var(--mm-border)',
+        borderRadius: 'var(--mm-r-3xl)',
+        padding: '52px 44px',
+        textAlign: 'center',
+        boxShadow: 'var(--mm-shadow-lg)',
+        animation: 'mm-grow-in .28s var(--mm-ease) both',
+      }}>
+        <div style={{
+          width: 72, height: 72, borderRadius: 20,
+          background: 'var(--mm-error-dim)',
+          border: '1px solid var(--mm-error-ring)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          margin: '0 auto 24px', fontSize: 32,
+        }} aria-hidden="true">
+          🔒
+        </div>
+
+        <h1 style={{ margin: '0 0 12px', fontSize: '1.75rem', fontWeight: 800, color: 'var(--mm-text-1)', letterSpacing: '-.035em' }}>
+          Access restricted
+        </h1>
+
+        <p style={{ margin: '0 0 10px', color: 'var(--mm-text-3)', fontSize: '.9375rem', lineHeight: 1.65 }}>
+          Your role{' '}
+          <strong style={{ color: 'var(--mm-brand)', fontWeight: 700 }}>
+            {user?.role || 'unknown'}
+          </strong>{' '}
+          doesn&apos;t have permission to view this page.
         </p>
-        <div style={s.actions}>
-          <button onClick={handleGoHome} style={s.homeBtn}>
+        <p style={{ margin: '0 0 36px', color: 'var(--mm-text-4)', fontSize: '.875rem', lineHeight: 1.6 }}>
+          You can return to your dashboard or sign in with a different account.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <button
+            onClick={() => navigate(ROLE_HOME[user?.role] || '/browse', { replace: true })}
+            className="mm-btn mm-btn-primary mm-btn-full"
+            style={{ padding: '13px', fontSize: '.9375rem', borderRadius: 'var(--mm-r-xl)' }}
+          >
             Go to my dashboard
           </button>
           <button
             onClick={() => { logout(); navigate('/login', { replace: true }) }}
-            style={s.logoutBtn}
+            className="mm-btn mm-btn-ghost mm-btn-full"
+            style={{ borderRadius: 'var(--mm-r-xl)' }}
           >
             Sign in as a different user
           </button>
@@ -34,52 +68,4 @@ export default function UnauthorizedPage() {
       </div>
     </div>
   )
-}
-
-const s = {
-  page: {
-    minHeight: '100svh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: '#020817',
-    padding: 24,
-  },
-  card: {
-    maxWidth: 420,
-    width: '100%',
-    background: 'rgba(15,23,42,0.88)',
-    border: '1px solid rgba(239,68,68,0.2)',
-    borderRadius: 28,
-    padding: '48px 36px',
-    textAlign: 'center',
-    boxShadow: '0 32px 80px rgba(2,6,23,0.5)',
-  },
-  icon: { fontSize: 52, marginBottom: 20 },
-  heading: { margin: '0 0 12px', fontSize: 28, fontWeight: 800, color: '#f8fafc' },
-  text: { margin: '0 0 32px', color: '#94a3b8', fontSize: 16, lineHeight: 1.6 },
-  role: { color: '#fb923c' },
-  actions: { display: 'flex', flexDirection: 'column', gap: 12 },
-  homeBtn: {
-    padding: '13px 20px',
-    borderRadius: 14,
-    border: 'none',
-    background: '#f97316',
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: 700,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-  },
-  logoutBtn: {
-    padding: '13px 20px',
-    borderRadius: 14,
-    border: '1px solid rgba(148,163,184,0.2)',
-    background: 'transparent',
-    color: '#94a3b8',
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-  },
 }

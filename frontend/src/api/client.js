@@ -18,13 +18,6 @@ function getToken() {
  * can react without a circular import.
  */
 async function handleResponse(res) {
-  // Global 401 handler — token expired or revoked
-  if (res.status === 401) {
-    localStorage.removeItem('mm_token')
-    localStorage.removeItem('mm_user')
-    window.dispatchEvent(new CustomEvent('mm:unauthorized'))
-  }
-
   let body
   try {
     body = await res.json()
@@ -39,10 +32,18 @@ async function handleResponse(res) {
     return body.data
   }
 
-  // Error path — read structured error from envelope
-  const errObj = body?.error || {}
-  const message = errObj.message || `Request failed: ${res.status}`
+  // Error path — read structured error from our envelope *or* FastAPI's detail field
+  const errObj = body?.error || (typeof body?.detail === 'object' ? body.detail : null) || {}
+  const message = errObj.message || (typeof body?.detail === 'string' ? body.detail : null) || `Request failed: ${res.status}`
   const code = errObj.code || _fallbackCode(res.status, message)
+
+  // Global 401 handler — only fire for expired/revoked session tokens, not during
+  // login EBT challenges (those also return 401 but are handled by the caller).
+  if (res.status === 401 && code !== 'EBT_VERIFICATION_REQUIRED' && localStorage.getItem('mm_token')) {
+    localStorage.removeItem('mm_token')
+    localStorage.removeItem('mm_user')
+    window.dispatchEvent(new CustomEvent('mm:unauthorized'))
+  }
 
   const err = new Error(message)
   err.code = code
@@ -97,6 +98,32 @@ function del(path) {
     method: 'DELETE',
     headers: _authHeaders(),
   }).then(handleResponse)
+}
+
+/**
+ * Fire-and-forget client telemetry. Never throws.
+ * Used for map/runtime diagnostics so backend can capture client-side failures.
+ */
+export async function reportMapError(payload = {}) {
+  try {
+    await fetch(`${API_BASE_URL}/api/v1/client-errors/map`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ..._authHeaders() },
+      keepalive: true,
+      body: JSON.stringify({
+        message: payload.message || 'Unknown map error',
+        code: payload.code || 'MAP_CLIENT_ERROR',
+        level: payload.level || 'error',
+        source: payload.source || 'meal-map',
+        stack: payload.stack || '',
+        context: payload.context || {},
+        url: payload.url || (typeof window !== 'undefined' ? window.location.href : ''),
+        user_agent: payload.user_agent || (typeof navigator !== 'undefined' ? navigator.userAgent : ''),
+      }),
+    })
+  } catch {
+    // swallow telemetry failures — must never impact UI/runtime behavior
+  }
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -160,6 +187,10 @@ export function getAdminStats() {
 
 export function getAdminLoginArchive() {
   return request('/api/v1/admin/login-archive')
+}
+
+export function getAdminMapErrors() {
+  return request('/api/v1/admin/map-errors')
 }
 
 export function createListing(listing) {
