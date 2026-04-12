@@ -16,12 +16,21 @@ const DEFAULT_CENTER = { lat: 38.9869, lng: -76.9426 }
 const DEFAULT_ZOOM = 13
 
 const OSRM_BASE = 'https://router.project-osrm.org/route/v1'
+// transit is not supported by OSRM — falls back to walking (noted in UI)
 const OSRM_PROFILE = {
   driving: 'driving',
   walking: 'walking',
   bicycling: 'cycling',
   cycling: 'cycling',
+  transit: 'walking',
 }
+
+const NAV_MODES_MAP = [
+  { key: 'driving',  icon: '🚗', label: 'Drive' },
+  { key: 'walking',  icon: '🚶', label: 'Walk' },
+  { key: 'bicycling', icon: '🚴', label: 'Bike' },
+  { key: 'transit',  icon: '🚌', label: 'Transit' },
+]
 
 const STEP_ADVANCE_M = 30
 const REROUTE_M = 200
@@ -189,53 +198,38 @@ function MarkerPin({ variant = 'default', onClick }) {
   )
 }
 
-const MealMap = forwardRef(function MealMap(
-  {
-    listings = [],
-    focusedId = null,
-    onListingClick,
-    onClaim,
-    claimingIds = new Set(),
-    height = 560,
-  },
-  ref,
-) {
-  const mapRef = useRef(null)
-  const mountedRef = useRef(true)
-  const watchIdRef = useRef(null)
-  const navTargetRef = useRef(null)
-  const navModeRef = useRef('driving')
-  const navStepsRef = useRef([])
-  const routeCoordsRef = useRef(null)
-  const isRecalcRef = useRef(false)
-  const lastRecalcLocRef = useRef(null)
-  const fitDoneRef = useRef(false)
-  const recenteringRef = useRef(false)
+// ─── useNavigation hook ──────────────────────────────────────────────────────
 
-  const [popupId, setPopupId] = useState(null)
-  const [navTarget, setNavTarget] = useState(null)
-  const [userLoc, setUserLoc] = useState(null)
-  // GeoJSON coords [[lng, lat], ...] — kept in this format for Source/Layer
-  const [routeCoords, setRouteCoords] = useState([])
-  const [navSteps, setNavSteps] = useState([])
-  const [navSummary, setNavSummary] = useState(null)
-  const [stepIdx, setStepIdx] = useState(0)
-  const [navLoading, setNavLoading] = useState(false)
-  const [navError, setNavError] = useState(null)
-  const [followUser, setFollowUser] = useState(false)
-  const [mapReady, setMapReady] = useState(false)
+function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart }) {
+  const mountedRef         = useRef(true)
+  const watchIdRef         = useRef(null)
+  const navTargetRef       = useRef(null)
+  const navModeRef         = useRef('driving')
+  const navStepsRef        = useRef([])
+  const stepIdxRef         = useRef(0)
+  const routeCoordsRef     = useRef(null)
+  const isRecalcRef        = useRef(false)
+  const lastRecalcLocRef   = useRef(null)
+  const fitDoneRef         = useRef(false)
+  const recenteringRef     = useRef(false)
+  const speedSamplesRef    = useRef([])   // ring buffer [{ distMetres, dtMs }], max 5
+  const lastLocRef         = useRef(null) // previous GPS { lat, lng }
+  const lastLocTimeRef     = useRef(null) // ms timestamp of lastLocRef
 
-  const logMapError = useCallback((message, context = {}, level = 'error', code = 'MAP_CLIENT_ERROR') => {
-    reportMapError({
-      message,
-      code,
-      level,
-      source: 'meal-map',
-      context,
-    })
-  }, [])
+  const [navTarget,    setNavTarget]    = useState(null)
+  const [userLoc,      setUserLoc]      = useState(null)
+  const [routeCoords,  setRouteCoords]  = useState([])
+  const [navSteps,     setNavSteps]     = useState([])
+  const [navSummary,   setNavSummary]   = useState(null)
+  const [stepIdx,      setStepIdx]      = useState(0)
+  const [navLoading,   setNavLoading]   = useState(false)
+  const [navError,     setNavError]     = useState(null)
+  const [followUser,   setFollowUser]   = useState(false)
+  const [navMode,      setNavMode]      = useState('driving')
+  const [rerouting,    setRerouting]    = useState(false)
+  const [rollingSpeed, setRollingSpeed] = useState(null) // m/s; null when stopped
 
-  // Mount / unmount — do NOT call setState in cleanup (unnecessary + harmless but noisy)
+  // Mount / unmount — clear geolocation watch
   useEffect(() => {
     mountedRef.current = true
     return () => {
@@ -247,79 +241,27 @@ const MealMap = forwardRef(function MealMap(
     }
   }, [])
 
-  // Listings filtered to those with valid numeric coords
-  const withCoords = useMemo(
-    () =>
-      listings
-        .map((listing) => {
-          const location = safeLocation(listing)
-          if (!location) return null
-          return { ...listing, location }
-        })
-        .filter(Boolean),
-    [listings],
-  )
+  // Sync refs used inside async callbacks
+  useEffect(() => { navStepsRef.current = navSteps }, [navSteps])
+  useEffect(() => { navTargetRef.current = navTarget }, [navTarget])
+  useEffect(() => { stepIdxRef.current = stepIdx }, [stepIdx])
 
-  // Safe numeric location for navTarget — fixes the string-coord bug where
-  // Number.isFinite("38.9") === false caused fitBounds/isArrived to silently fail
+  // Safe numeric location for navTarget (fixes string-coord bug)
   const navTargetLoc = useMemo(
     () => (navTarget ? safeLocation(navTarget) : null),
     [navTarget],
   )
 
-  // Sync refs used inside async callbacks
-  useEffect(() => {
-    navStepsRef.current = navSteps
-  }, [navSteps])
-
-  useEffect(() => {
-    navTargetRef.current = navTarget
-  }, [navTarget])
-
-  // Clear popup when its listing disappears from the filtered set
-  useEffect(() => {
-    if (!popupId || withCoords.some((l) => l.id === popupId)) return
-    setPopupId(null)
-  }, [popupId, withCoords])
-
-  // Fly to focused listing
-  useEffect(() => {
-    if (!focusedId) return
-    setPopupId(focusedId)
-    const listing = withCoords.find((l) => l.id === focusedId)
-    if (!listing || !mapRef.current || !mapReady) return
-    try {
-      mapRef.current.flyTo({
-        center: [listing.location.lng, listing.location.lat],
-        zoom: 16,
-        duration: 800,
-      })
-    } catch (e) {
-      logMapError('Failed to focus listing on map', {
-        action: 'focus_listing',
-        listing_id: focusedId,
-        error: String(e?.message || e),
-      }, 'warn', 'MAP_FOCUS_FAILED')
-    }
-  }, [focusedId, withCoords, mapReady, logMapError])
-
-  // Fit bounds once the initial route loads; after animation enable follow mode
+  // Fit bounds once the initial route loads; then enable follow mode
   useEffect(() => {
     if (!routeCoords.length || !userLoc || !navTargetLoc || fitDoneRef.current) return
     if (!mapRef.current || !mapReady) return
-
     fitDoneRef.current = true
     try {
       mapRef.current.fitBounds(
         [
-          [
-            Math.min(userLoc.lng, navTargetLoc.lng),
-            Math.min(userLoc.lat, navTargetLoc.lat),
-          ],
-          [
-            Math.max(userLoc.lng, navTargetLoc.lng),
-            Math.max(userLoc.lat, navTargetLoc.lat),
-          ],
+          [Math.min(userLoc.lng, navTargetLoc.lng), Math.min(userLoc.lat, navTargetLoc.lat)],
+          [Math.max(userLoc.lng, navTargetLoc.lng), Math.max(userLoc.lat, navTargetLoc.lat)],
         ],
         { padding: 60, maxZoom: 17, duration: 800 },
       )
@@ -331,31 +273,25 @@ const MealMap = forwardRef(function MealMap(
         error: String(e?.message || e),
       }, 'warn', 'MAP_FIT_BOUNDS_FAILED')
     }
-
-    const t = setTimeout(() => {
-      if (mountedRef.current) setFollowUser(true)
-    }, 900)
+    const t = setTimeout(() => { if (mountedRef.current) setFollowUser(true) }, 900)
     return () => clearTimeout(t)
-  }, [routeCoords, userLoc, navTargetLoc, mapReady, logMapError])
+  }, [routeCoords, userLoc, navTargetLoc, mapReady, logMapError, mapRef])
 
   // Pan to user whenever location updates while following
   useEffect(() => {
     if (!followUser || !userLoc || !mapRef.current || !mapReady) return
     if (!validCoord(userLoc.lat, userLoc.lng)) return
     try {
-      mapRef.current.flyTo({
-        center: [userLoc.lng, userLoc.lat],
-        zoom: 17,
-        duration: 700,
-      })
+      mapRef.current.flyTo({ center: [userLoc.lng, userLoc.lat], zoom: 17, duration: 700 })
     } catch (e) {
       logMapError('Map follow-user flyTo failed', {
         action: 'follow_user',
         error: String(e?.message || e),
       }, 'warn', 'MAP_FOLLOW_FAILED')
     }
-  }, [followUser, userLoc, mapReady, logMapError])
+  }, [followUser, userLoc, mapReady, logMapError, mapRef])
 
+  // ── fetchRoute ──────────────────────────────────────────────────────────────
   const fetchRoute = useCallback(async (listing, fromLoc, mode) => {
     const destLoc = safeLocation(listing)
     if (!destLoc) {
@@ -386,17 +322,14 @@ const MealMap = forwardRef(function MealMap(
       const res = await fetch(url)
       if (!mountedRef.current) return
       if (!res.ok) throw new Error('Routing service unavailable')
-
       const data = await res.json()
       if (!mountedRef.current) return
-      if (data.code !== 'Ok' || !data.routes?.length) {
+      if (data.code !== 'Ok' || !data.routes?.length)
         throw new Error('No route found between these points')
-      }
 
       const r = data.routes[0]
       const steps = r.legs?.[0]?.steps ?? []
       const raw = Array.isArray(r.geometry?.coordinates) ? r.geometry.coordinates : []
-      // Keep GeoJSON [[lng, lat]] format; drop any malformed points
       const coords = raw.filter(
         (pt) =>
           Array.isArray(pt) &&
@@ -415,9 +348,7 @@ const MealMap = forwardRef(function MealMap(
         setNavError(null)
       }
     } catch (e) {
-      if (mountedRef.current) {
-        setNavError(`Could not calculate a route. ${e.message}`)
-      }
+      if (mountedRef.current) setNavError(`Could not calculate a route. ${e.message}`)
       logMapError('Route calculation failed', {
         action: 'fetch_route',
         listing_id: listing?.id || null,
@@ -427,6 +358,7 @@ const MealMap = forwardRef(function MealMap(
     }
   }, [logMapError])
 
+  // ── startNavigation ─────────────────────────────────────────────────────────
   const startNavigation = useCallback(
     async (listing, mode = 'driving') => {
       if (!safeLocation(listing)) {
@@ -440,9 +372,7 @@ const MealMap = forwardRef(function MealMap(
       }
 
       if (!navigator.geolocation) {
-        setNavError(
-          'Geolocation is not available. Please use HTTPS or a supported browser.',
-        )
+        setNavError('Geolocation is not available. Please use HTTPS or a supported browser.')
         setNavTarget(listing)
         logMapError('Navigation start blocked: geolocation unavailable', {
           action: 'start_navigation',
@@ -457,20 +387,28 @@ const MealMap = forwardRef(function MealMap(
       }
 
       navTargetRef.current = listing
-      navModeRef.current = mode
+      navModeRef.current = OSRM_PROFILE[mode] ?? 'walking'
       fitDoneRef.current = false
       isRecalcRef.current = false
       lastRecalcLocRef.current = null
+      speedSamplesRef.current = []
+      lastLocRef.current = null
+      lastLocTimeRef.current = null
 
       setNavError(null)
       setNavLoading(true)
       setNavTarget(listing)
+      setNavMode(mode)
       setRouteCoords([])
       setNavSteps([])
       setNavSummary(null)
       setStepIdx(0)
       setFollowUser(false)
-      setPopupId(null)
+      setRerouting(false)
+      setRollingSpeed(null)
+
+      // Close any open popup
+      onNavigationStart?.()
 
       let pos
       try {
@@ -513,6 +451,8 @@ const MealMap = forwardRef(function MealMap(
 
       setUserLoc(ul)
       lastRecalcLocRef.current = ul
+      lastLocRef.current = ul
+      lastLocTimeRef.current = Date.now()
 
       if (mapRef.current && mapReady) {
         try {
@@ -536,8 +476,35 @@ const MealMap = forwardRef(function MealMap(
           const loc = { lat: p.coords.latitude, lng: p.coords.longitude }
           if (!validCoord(loc.lat, loc.lng)) return
 
+          // ── Speed sampling ─────────────────────────────────────────────────
+          const now = Date.now()
+          if (lastLocRef.current && lastLocTimeRef.current) {
+            const d = haversine(lastLocRef.current.lat, lastLocRef.current.lng, loc.lat, loc.lng)
+            const dt = now - lastLocTimeRef.current
+            if (d > 0 && dt > 0) {
+              const samples = speedSamplesRef.current
+              if (samples.length >= 5) samples.shift()
+              samples.push({ distMetres: d, dtMs: dt })
+            }
+          }
+          lastLocRef.current = loc
+          lastLocTimeRef.current = now
+
+          // Rolling speed from ring buffer (updated as state so etaSecs memo re-fires)
+          const samples = speedSamplesRef.current
+          if (samples.length >= 2) {
+            const td = samples.reduce((s, x) => s + x.distMetres, 0)
+            const tt = samples.reduce((s, x) => s + x.dtMs, 0)
+            const spd = (td / tt) * 1000 // m/s
+            setRollingSpeed(spd >= 0.5 ? spd : null)
+          } else {
+            setRollingSpeed(null)
+          }
+          // ──────────────────────────────────────────────────────────────────
+
           setUserLoc(loc)
 
+          // Step advancement
           setStepIdx((prev) => {
             const steps = navStepsRef.current
             if (prev >= steps.length - 1) return prev
@@ -549,6 +516,7 @@ const MealMap = forwardRef(function MealMap(
               : prev
           })
 
+          // Auto-reroute
           if (!isRecalcRef.current && routeCoordsRef.current) {
             const offDist = minDistToPolyline(routeCoordsRef.current, loc)
             const lastRecalc = lastRecalcLocRef.current
@@ -558,8 +526,12 @@ const MealMap = forwardRef(function MealMap(
             if (offDist > REROUTE_M && moved > 50 && navTargetRef.current) {
               isRecalcRef.current = true
               lastRecalcLocRef.current = loc
+              setRerouting(true)
               fetchRoute(navTargetRef.current, loc, navModeRef.current).finally(() => {
-                isRecalcRef.current = false
+                if (mountedRef.current) {
+                  isRecalcRef.current = false
+                  setRerouting(false)
+                }
               })
             }
           }
@@ -574,15 +546,19 @@ const MealMap = forwardRef(function MealMap(
         { enableHighAccuracy: true, maximumAge: 2000 },
       )
     },
-    [fetchRoute, mapReady, logMapError],
+    [fetchRoute, mapReady, logMapError, onNavigationStart, mapRef],
   )
 
-  function clearNav() {
+  // ── clearNav ────────────────────────────────────────────────────────────────
+  const clearNav = useCallback(() => {
     if (watchIdRef.current != null) {
       navigator.geolocation?.clearWatch(watchIdRef.current)
       watchIdRef.current = null
     }
     fitDoneRef.current = false
+    speedSamplesRef.current = []
+    lastLocRef.current = null
+    lastLocTimeRef.current = null
     setNavTarget(null)
     setUserLoc(null)
     setRouteCoords([])
@@ -592,47 +568,222 @@ const MealMap = forwardRef(function MealMap(
     setNavError(null)
     setNavLoading(false)
     setFollowUser(false)
+    setRerouting(false)
+    setRollingSpeed(null)
+  }, [])
+
+  // ── changeMode ──────────────────────────────────────────────────────────────
+  // Immediately clears stale route data so the panel shows "Calculating..."
+  const changeMode = useCallback(async (newMode) => {
+    if (newMode === navMode || navLoading) return
+    setNavMode(newMode)
+    navModeRef.current = OSRM_PROFILE[newMode] ?? 'walking'
+    // Clear stale data immediately
+    setNavSteps([])
+    setStepIdx(0)
+    setNavSummary(null)
+    setRouteCoords([])
+    setNavError(null)
+    setRollingSpeed(null)
+    speedSamplesRef.current = []
+    if (!navTarget || !userLoc) return
+    fitDoneRef.current = false
+    setNavLoading(true)
+    await fetchRoute(navTarget, userLoc, newMode)
+    if (mountedRef.current) setNavLoading(false)
+  }, [navMode, navLoading, navTarget, userLoc, fetchRoute])
+
+  // ── handleRecenter ──────────────────────────────────────────────────────────
+  const handleRecenter = useCallback(() => {
+    if (recenteringRef.current) return
+    if (!mapReady || !mapRef.current) return
+    if (!userLoc || !validCoord(userLoc.lat, userLoc.lng)) {
+      setNavError('Coordinates unavailable. Cannot re-center map.')
+      logMapError('Re-center blocked: invalid user coordinates', {
+        action: 'recenter',
+        user_location: userLoc || null,
+      }, 'warn', 'MAP_RECENTER_INVALID_COORDS')
+      return
+    }
+    recenteringRef.current = true
+    setFollowUser(true)
+    try {
+      mapRef.current.flyTo({ center: [userLoc.lng, userLoc.lat], zoom: 17, duration: 600 })
+    } catch (e) {
+      logMapError('Map flyTo failed during re-center', {
+        action: 'recenter',
+        error: String(e?.message || e),
+      }, 'warn', 'MAP_RECENTER_FAILED')
+    }
+    setTimeout(() => { recenteringRef.current = false }, 800)
+  }, [mapReady, mapRef, userLoc, logMapError])
+
+  // ── Derived values ───────────────────────────────────────────────────────────
+  // distRemaining: live from GPS position relative to upcoming step maneuvers
+  const distRemaining = useMemo(() => {
+    if (!navSteps.length) return 0
+    const nextManeuverLoc = navSteps[stepIdx + 1]?.maneuver?.location
+    const distToNextTurn =
+      Array.isArray(nextManeuverLoc) && nextManeuverLoc.length >= 2 && userLoc
+        ? haversine(userLoc.lat, userLoc.lng, nextManeuverLoc[1], nextManeuverLoc[0])
+        : (navSteps[stepIdx]?.distance ?? 0)
+    return (
+      distToNextTurn +
+      navSteps.slice(stepIdx + 1).reduce((s, st) => s + (st?.distance ?? 0), 0)
+    )
+  }, [navSteps, stepIdx, userLoc])
+
+  // etaSecs: speed-based when rollingSpeed is available, proportional OSRM fallback otherwise
+  const etaSecs = useMemo(() => {
+    if (rollingSpeed !== null && rollingSpeed >= 0.5 && distRemaining > 0) {
+      return distRemaining / rollingSpeed
+    }
+    if (!navSummary) return null
+    return navSummary.duration * (distRemaining / Math.max(navSummary.distance, 1))
+  }, [rollingSpeed, distRemaining, navSummary])
+
+  const arrived = useMemo(
+    () =>
+      navTargetLoc && userLoc
+        ? haversine(userLoc.lat, userLoc.lng, navTargetLoc.lat, navTargetLoc.lng) < 50
+        : false,
+    [userLoc, navTargetLoc],
+  )
+
+  const navState = {
+    target: navTarget,
+    mode: navMode,
+    steps: navSteps,
+    stepIdx,
+    routeCoords,
+    summary: navSummary,
+    userLoc,
+    distRemaining,
+    etaSecs,
+    loading: navLoading,
+    error: navError,
+    rerouting,
+    arrived,
+    followUser,
   }
+
+  return { navState, navTargetLoc, startNavigation, clearNav, changeMode, handleRecenter, setFollowUser }
+}
+
+const MealMap = forwardRef(function MealMap(
+  {
+    listings = [],
+    focusedId = null,
+    onListingClick,
+    onClaim,
+    claimingIds = new Set(),
+    height = 560,
+  },
+  ref,
+) {
+  const mapRef = useRef(null)
+  const [mapReady, setMapReady] = useState(false)
+  const [popupId, setPopupId] = useState(null)
+
+  const logMapError = useCallback(
+    (message, context = {}, level = 'error', code = 'MAP_CLIENT_ERROR') => {
+      reportMapError({ message, code, level, source: 'meal-map', context })
+    },
+    [],
+  )
+
+  const {
+    navState,
+    startNavigation,
+    clearNav,
+    changeMode,
+    handleRecenter,
+    setFollowUser,
+  } = useNavigation({
+    mapRef,
+    mapReady,
+    logMapError,
+    onNavigationStart: () => setPopupId(null),
+  })
+
+  const {
+    target: navTarget,
+    mode: navMode,
+    steps: navSteps,
+    stepIdx,
+    routeCoords,
+    userLoc,
+    distRemaining,
+    etaSecs,
+    loading: navLoading,
+    error: navError,
+    rerouting,
+    arrived: isArrived,
+    followUser,
+  } = navState
 
   useImperativeHandle(ref, () => ({ startNavigation }), [startNavigation])
 
-  // Stable callback — not recreated on every render (fixes the MapBridge re-fire problem)
-  const onMapLoad = useCallback(() => {
-    if (mountedRef.current) setMapReady(true)
-  }, [])
+  const onMapLoad = useCallback(() => { setMapReady(true) }, [])
 
-  // GeoJSON feature for the route polyline
+  // Listings filtered to those with valid numeric coords
+  const withCoords = useMemo(
+    () =>
+      listings
+        .map((listing) => {
+          const location = safeLocation(listing)
+          if (!location) return null
+          return { ...listing, location }
+        })
+        .filter(Boolean),
+    [listings],
+  )
+
+  // Clear popup when its listing disappears from the filtered set
+  useEffect(() => {
+    if (!popupId || withCoords.some((l) => l.id === popupId)) return
+    setPopupId(null)
+  }, [popupId, withCoords])
+
+  // Fly to focused listing — skips camera move and popup during active navigation.
+  useEffect(() => {
+    if (!focusedId) return
+    if (navTarget) return  // During active navigation, never auto-open popup
+    setPopupId(focusedId)
+    const listing = withCoords.find((l) => l.id === focusedId)
+    if (!listing || !mapRef.current || !mapReady) return
+    try {
+      mapRef.current.flyTo({
+        center: [listing.location.lng, listing.location.lat],
+        zoom: 16,
+        duration: 800,
+      })
+    } catch (e) {
+      logMapError('Failed to focus listing on map', {
+        action: 'focus_listing',
+        listing_id: focusedId,
+        error: String(e?.message || e),
+      }, 'warn', 'MAP_FOCUS_FAILED')
+    }
+  }, [focusedId, withCoords, mapReady, logMapError, navTarget])
+
+  // Stable GeoJSON ref prevents MapLibre setData on every userLoc re-render
   const routeGeoJSON = useMemo(
-    () => ({
-      type: 'Feature',
-      geometry: { type: 'LineString', coordinates: routeCoords },
-    }),
+    () => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: routeCoords } }),
     [routeCoords],
   )
 
-  // Derived display values
+  // Derived display values for the direction panel
   const currentStep = navSteps[stepIdx]
-  const nextStep = navSteps[stepIdx + 1]
-  const distRemaining = navSteps
-    .slice(stepIdx)
-    .reduce((sum, st) => sum + (st?.distance ?? 0), 0)
-  const timeRemaining = navSummary
-    ? navSummary.duration * (distRemaining / Math.max(navSummary.distance, 1))
-    : null
+  const nextStep    = navSteps[stepIdx + 1]
   const nextManeuverLoc = nextStep?.maneuver?.location
   const distToTurn =
     userLoc && Array.isArray(nextManeuverLoc) && nextManeuverLoc.length >= 2
       ? haversine(userLoc.lat, userLoc.lng, nextManeuverLoc[1], nextManeuverLoc[0])
       : null
 
-  // Use navTargetLoc (numeric) instead of navTarget.location (possibly string) — key bug fix
-  const isArrived =
-    !!navTargetLoc &&
-    !!userLoc &&
-    haversine(userLoc.lat, userLoc.lng, navTargetLoc.lat, navTargetLoc.lng) < 50
-
   const focusedListing = focusedId ? listings.find((l) => l.id === focusedId) : null
-  const popupListing = popupId ? withCoords.find((l) => l.id === popupId) : null
+  const popupListing   = popupId   ? withCoords.find((l) => l.id === popupId) : null
   const focusedMissingCoords =
     focusedListing != null && !withCoords.some((l) => l.id === focusedId)
 
@@ -657,15 +808,39 @@ const MealMap = forwardRef(function MealMap(
               <div style={s.dirDest}>
                 {navTarget?.location_name || navTarget?.title || 'Destination'}
               </div>
-              {distRemaining > 0 && timeRemaining != null ? (
+              {distRemaining > 0 && etaSecs != null ? (
                 <div style={s.dirSummary}>
-                  {formatDist(distRemaining)} · {formatDuration(timeRemaining)} left
+                  {formatDist(distRemaining)} · {formatDuration(etaSecs)} left
+                  {rerouting && <span style={{ marginLeft: 6, color: '#f59e0b', fontSize: 10 }}>Rerouting…</span>}
                 </div>
               ) : navLoading ? (
                 <div style={s.dirSummary}>Calculating route…</div>
               ) : null}
             </div>
           </div>
+
+          {/* Transport mode selector */}
+          <div style={s.modeRow}>
+            {NAV_MODES_MAP.map((m) => (
+              <button
+                key={m.key}
+                style={{ ...s.modeBtn, ...(navMode === m.key ? s.modeBtnActive : {}) }}
+                onClick={() => changeMode(m.key)}
+                aria-pressed={navMode === m.key}
+                title={m.label}
+                disabled={navLoading}
+              >
+                {m.icon}
+              </button>
+            ))}
+          </div>
+
+          {/* Transit fallback notice */}
+          {navMode === 'transit' && (
+            <div style={s.transitNote}>
+              🚌 Live transit data is unavailable — showing a walking route as a guide.
+            </div>
+          )}
 
           {navError && <div style={s.dirError}>{navError}</div>}
 
@@ -738,7 +913,7 @@ const MealMap = forwardRef(function MealMap(
         </div>
       )}
 
-      {/* Re-center button — shown when navigation is active but not auto-following */}
+      {/* Re-center button */}
       {navTarget && !followUser && !navLoading && (
         <button
           style={{
@@ -746,35 +921,7 @@ const MealMap = forwardRef(function MealMap(
             ...(!mapReady || !userLoc ? { opacity: 0.4, cursor: 'not-allowed' } : {}),
           }}
           disabled={!mapReady || !userLoc}
-          onClick={() => {
-            if (recenteringRef.current) return
-            if (!mapReady || !mapRef.current) return
-            if (!userLoc || !validCoord(userLoc.lat, userLoc.lng)) {
-              setNavError('Coordinates unavailable. Cannot re-center map.')
-              logMapError('Re-center blocked: invalid user coordinates', {
-                action: 'recenter',
-                user_location: userLoc || null,
-              }, 'warn', 'MAP_RECENTER_INVALID_COORDS')
-              return
-            }
-            recenteringRef.current = true
-            setFollowUser(true)
-            try {
-              mapRef.current.flyTo({
-                center: [userLoc.lng, userLoc.lat],
-                zoom: 17,
-                duration: 600,
-              })
-            } catch (e) {
-              logMapError('Map flyTo failed during re-center', {
-                action: 'recenter',
-                error: String(e?.message || e),
-              }, 'warn', 'MAP_RECENTER_FAILED')
-            }
-            setTimeout(() => {
-              recenteringRef.current = false
-            }, 800)
-          }}
+          onClick={handleRecenter}
         >
           ⊕ Re-center
         </button>
@@ -802,7 +949,6 @@ const MealMap = forwardRef(function MealMap(
       >
         <NavigationControl position="top-right" showCompass={false} />
 
-        {/* Route polyline rendered as GeoJSON source — no Polyline component to crash */}
         {routeCoords.length >= 2 && (
           <Source id="route" type="geojson" data={routeGeoJSON}>
             <Layer
@@ -820,7 +966,6 @@ const MealMap = forwardRef(function MealMap(
           </Source>
         )}
 
-        {/* User location dot */}
         {userLoc && validCoord(userLoc.lat, userLoc.lng) && (
           <Marker longitude={userLoc.lng} latitude={userLoc.lat} anchor="center">
             <div
@@ -837,7 +982,6 @@ const MealMap = forwardRef(function MealMap(
           </Marker>
         )}
 
-        {/* Listing markers */}
         {withCoords.map((listing) => {
           const variant =
             navTarget?.id === listing.id
@@ -864,7 +1008,6 @@ const MealMap = forwardRef(function MealMap(
           )
         })}
 
-        {/* Popup for selected listing */}
         {popupListing && (
           <Popup
             longitude={popupListing.location.lng}
@@ -900,9 +1043,7 @@ const MealMap = forwardRef(function MealMap(
                   disabled={navLoading}
                   style={s.popupDirBtn}
                 >
-                  {navLoading && navTarget?.id === popupListing.id
-                    ? 'Loading…'
-                    : '↗ Directions'}
+                  {navLoading && navTarget?.id === popupListing.id ? 'Loading…' : '↗ Directions'}
                 </button>
               </div>
             </div>
@@ -1153,5 +1294,34 @@ const s = {
     fontSize: 12,
     cursor: 'pointer',
     fontFamily: 'inherit',
+  },
+  modeRow: {
+    display: 'flex',
+    gap: 6,
+    padding: '10px 14px 4px',
+    flexShrink: 0,
+  },
+  modeBtn: {
+    flex: 1,
+    padding: '6px 0',
+    borderRadius: 10,
+    border: '1px solid rgba(255,255,255,0.10)',
+    background: 'rgba(255,255,255,0.04)',
+    color: '#71717a',
+    fontSize: 16,
+    cursor: 'pointer',
+    transition: 'background 0.15s, border-color 0.15s',
+  },
+  modeBtnActive: {
+    background: 'rgba(59,130,246,0.18)',
+    border: '1px solid rgba(59,130,246,0.45)',
+    color: '#60a5fa',
+  },
+  transitNote: {
+    padding: '6px 14px 10px',
+    fontSize: 11,
+    color: '#a3a3a3',
+    lineHeight: 1.5,
+    flexShrink: 0,
   },
 }
