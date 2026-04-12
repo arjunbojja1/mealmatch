@@ -24,6 +24,7 @@ from enum import Enum
 from typing import Literal
 from uuid import uuid4
 import threading
+import logging
 
 import bcrypt
 import jwt
@@ -56,13 +57,31 @@ if not hasattr(jwt, "encode") or not hasattr(jwt, "decode"):
 
 app = FastAPI(title="MealMatch API", version="0.5.0")
 
+# Comma-separated explicit origins for non-local environments.
+# Example:
+#   CORS_ALLOW_ORIGINS="https://mealmatch.app,https://staging.mealmatch.app"
+_cors_allow_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ALLOW_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=_cors_allow_origins,
+    # Also allow local dev ports (e.g. Vite fallback from 5173 -> 5174).
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Structured backend logger for client-side map telemetry
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+map_client_logger = logging.getLogger("mealmatch.map_client")
 
 # ---------------------------------------------------------------------------
 # Response helpers
@@ -111,6 +130,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    import traceback
+    logging.getLogger("mealmatch.api").error(
+        "Unhandled exception on %s %s\n%s",
+        request.method,
+        request.url.path,
+        traceback.format_exc(),
+    )
     return JSONResponse(_err_body("INTERNAL_ERROR", "An unexpected error occurred"), status_code=500)
 
 
@@ -191,6 +217,32 @@ class LoginAuditEntry(BaseModel):
     created_at: datetime
 
 
+class MapErrorReport(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+    code: str = Field(default="MAP_CLIENT_ERROR", max_length=100)
+    level: Literal["error", "warn", "info"] = "error"
+    source: str = Field(default="meal-map", max_length=120)
+    stack: str = Field(default="", max_length=8000)
+    context: dict = Field(default_factory=dict)
+    url: str = Field(default="", max_length=500)
+    user_agent: str = Field(default="", max_length=500)
+
+
+class MapErrorLogEntry(BaseModel):
+    id: str
+    code: str
+    level: Literal["error", "warn", "info"]
+    source: str
+    message: str
+    stack: str = ""
+    context: dict = Field(default_factory=dict)
+    url: str = ""
+    user_agent: str = ""
+    user_id: str | None = None
+    user_email: str | None = None
+    created_at: datetime
+
+
 # ---------------------------------------------------------------------------
 # Auth storage + seeding
 # ---------------------------------------------------------------------------
@@ -201,7 +253,9 @@ user_repo: UserRepository = get_user_repository()
 # In-memory stores (static/ephemeral — no persistence needed)
 _ebt_records: dict[str, SimulatedEBTRecord] = {}
 _login_archive: list[LoginAuditEntry] = []
+_map_error_archive: list[MapErrorLogEntry] = []
 _auth_lock = threading.Lock()
+_map_error_lock = threading.Lock()
 
 
 def _hash_pw(password: str) -> str:
@@ -353,6 +407,32 @@ def _archive_login_attempt(
             del _login_archive[:-250]
 
 
+def _archive_map_error(
+    *,
+    payload: MapErrorReport,
+    user: UserInDB | None,
+) -> MapErrorLogEntry:
+    entry = MapErrorLogEntry(
+        id=str(uuid4()),
+        code=payload.code,
+        level=payload.level,
+        source=payload.source,
+        message=payload.message,
+        stack=payload.stack,
+        context=payload.context,
+        url=payload.url,
+        user_agent=payload.user_agent,
+        user_id=user.id if user else None,
+        user_email=user.email if user else None,
+        created_at=datetime.now(timezone.utc),
+    )
+    with _map_error_lock:
+        _map_error_archive.append(entry)
+        if len(_map_error_archive) > 500:
+            del _map_error_archive[:-500]
+    return entry
+
+
 def get_current_user(token: str | None = Depends(oauth2_scheme)) -> UserInDB:
     """FastAPI dependency — resolves a Bearer token to a UserInDB or raises 401."""
     if not token:
@@ -387,6 +467,21 @@ def get_current_user(token: str | None = Depends(oauth2_scheme)) -> UserInDB:
             detail={"code": "USER_NOT_FOUND", "message": "User account no longer exists"},
         )
     return UserInDB(**user_dict)
+
+
+def get_optional_user(token: str | None = Depends(oauth2_scheme)) -> UserInDB | None:
+    """Best-effort current user resolution for telemetry endpoints."""
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+    except Exception:
+        return None
+    user_dict = user_repo.get_by_id(user_id)
+    return UserInDB(**user_dict) if user_dict else None
 
 
 def require_roles(*roles: str):
@@ -717,6 +812,454 @@ listings: dict[str, Listing] = {
         quantity=6, dietary_tags=["gluten-free"],
         pickup_start=_future(0.1), pickup_end=_future(0.75),
         status=ListingStatus.active, created_at=_now,
+    ),
+
+    # -----------------------------------------------------------------------
+    # College Park, MD listings (seed-cp-1 through seed-cp-10)
+    # -----------------------------------------------------------------------
+    "seed-cp-1": Listing(
+        id="seed-cp-1", restaurant_id="rest-001",
+        title="Terp Tacos — Beef & Chicken",
+        description="End-of-night surplus from our taco bar: seasoned beef, grilled chicken, salsa, tortillas. ~35 portions.",
+        quantity=35, dietary_tags=["halal", "gluten"],
+        pickup_start=_future(0.5), pickup_end=_future(2),
+        status=ListingStatus.active, created_at=_now,
+        address="7777 Baltimore Ave, College Park, MD 20740",
+        location_name="Terp Taqueria",
+        lat=38.9807, lng=-76.9369,
+    ),
+    "seed-cp-2": Listing(
+        id="seed-cp-2", restaurant_id="rest-002",
+        title="UMD Dining Hall Soup & Bread",
+        description="Minestrone soup and assorted dinner rolls from South Campus Dining. 40 servings.",
+        quantity=40, dietary_tags=["vegetarian", "contains_dairy"],
+        pickup_start=_future(1), pickup_end=_future(3),
+        status=ListingStatus.active, created_at=_now,
+        address="3150 S Campus Dining Hall Dr, College Park, MD 20742",
+        location_name="South Campus Dining",
+        lat=38.9836, lng=-76.9446,
+    ),
+    "seed-cp-3": Listing(
+        id="seed-cp-3", restaurant_id="rest-003",
+        title="Halal Lamb Over Rice",
+        description="Street-style halal lamb and white rice with white sauce. 18 portions left.",
+        quantity=18, dietary_tags=["halal", "gluten-free"],
+        pickup_start=_future(0.25), pickup_end=_future(1.75),
+        status=ListingStatus.active, created_at=_now,
+        address="8001 Baltimore Ave, College Park, MD 20740",
+        location_name="Halal Cart at Route 1",
+        lat=38.9815, lng=-76.9372,
+    ),
+    "seed-cp-4": Listing(
+        id="seed-cp-4", restaurant_id="rest-004",
+        title="Vegan Wraps & Smoothies",
+        description="Leftover veggie wraps and unsold fruit smoothies from the market. 22 items.",
+        quantity=22, dietary_tags=["vegan", "gluten-free", "nut-free"],
+        pickup_start=_future(0.5), pickup_end=_future(2),
+        status=ListingStatus.active, created_at=_now,
+        address="7401 Baltimore Ave, College Park, MD 20740",
+        location_name="The Greens Market",
+        lat=38.9776, lng=-76.9361,
+    ),
+    "seed-cp-5": Listing(
+        id="seed-cp-5", restaurant_id="rest-005",
+        title="Korean BBQ Rice Bowls",
+        description="Bulgogi and bibimbap bowls from today's lunch special. 14 portions remaining.",
+        quantity=14, dietary_tags=["gluten"],
+        pickup_start=_future(1.5), pickup_end=_future(3),
+        status=ListingStatus.active, created_at=_now,
+        address="8051 Baltimore Ave, College Park, MD 20740",
+        location_name="Seoul Kitchen CP",
+        lat=38.9821, lng=-76.9376,
+    ),
+    "seed-cp-6": Listing(
+        id="seed-cp-6", restaurant_id="rest-001",
+        title="Pizza Slices — Cheese & Veggie",
+        description="Leftover pizza slices from a study session catering order. ~28 slices.",
+        quantity=28, dietary_tags=["vegetarian", "contains_dairy", "gluten"],
+        pickup_start=_future(0.1), pickup_end=_future(1),
+        status=ListingStatus.active, created_at=_now,
+        address="7315 Baltimore Ave, College Park, MD 20740",
+        location_name="Campus Pizza Co.",
+        lat=38.9763, lng=-76.9356,
+    ),
+    "seed-cp-7": Listing(
+        id="seed-cp-7", restaurant_id="rest-002",
+        title="Breakfast Burritos & Fruit Cups",
+        description="Scrambled egg burritos with salsa and mixed fruit cups. 20 portions.",
+        quantity=20, dietary_tags=["vegetarian", "gluten", "contains_dairy"],
+        pickup_start=_future(0), pickup_end=_future(1.25),
+        status=ListingStatus.active, created_at=_now,
+        address="7516 Baltimore Ave, College Park, MD 20740",
+        location_name="Morning Rush Café",
+        lat=38.9789, lng=-76.9363,
+    ),
+    "seed-cp-8": Listing(
+        id="seed-cp-8", restaurant_id="rest-003",
+        title="Indian Curry — Chana Masala & Naan",
+        description="Large tray of chana masala with garlic naan. Serves ~30.",
+        quantity=30, dietary_tags=["vegan", "halal"],
+        pickup_start=_future(2), pickup_end=_future(4),
+        status=ListingStatus.active, created_at=_now,
+        address="4519 Knox Rd, College Park, MD 20740",
+        location_name="Spice Route Kitchen",
+        lat=38.9852, lng=-76.9403,
+    ),
+    "seed-cp-9": Listing(
+        id="seed-cp-9", restaurant_id="rest-004",
+        title="Boxed Lunches — Alumni Event",
+        description="Catered boxed lunches from UMD alumni luncheon. Turkey, veggie, and gluten-free options.",
+        quantity=45, dietary_tags=["vegetarian-option", "gluten-free-option"],
+        pickup_start=_future(0.5), pickup_end=_future(2.5),
+        status=ListingStatus.active, created_at=_now,
+        address="7801 Alumni Dr, College Park, MD 20742",
+        location_name="Samuel Riggs IV Alumni Center",
+        lat=38.9899, lng=-76.9445,
+    ),
+    "seed-cp-10": Listing(
+        id="seed-cp-10", restaurant_id="rest-005",
+        title="Cookies & Pastries — Bakery Closeout",
+        description="Chocolate chip cookies, brownies, and croissants from end-of-day. ~50 items.",
+        quantity=50, dietary_tags=["vegetarian", "contains_dairy", "gluten"],
+        pickup_start=_future(0.25), pickup_end=_future(1.5),
+        status=ListingStatus.active, created_at=_now,
+        address="7400 Baltimore Ave, College Park, MD 20740",
+        location_name="The Baked Terrapin",
+        lat=38.9774, lng=-76.9360,
+    ),
+
+    # -----------------------------------------------------------------------
+    # Greater DC-area listings (seed-dc-1 through seed-dc-30)
+    # -----------------------------------------------------------------------
+    "seed-dc-1": Listing(
+        id="seed-dc-1", restaurant_id="rest-001",
+        title="Grilled Salmon & Roasted Vegetables",
+        description="Atlantic salmon fillets with seasonal roasted vegetables from tonight's service.",
+        quantity=16, dietary_tags=["gluten-free", "dairy-free"],
+        pickup_start=_future(1), pickup_end=_future(3),
+        status=ListingStatus.active, created_at=_now,
+        address="1250 H St NE, Washington, DC 20002",
+        location_name="H Street Grille",
+        lat=38.8997, lng=-76.9880,
+    ),
+    "seed-dc-2": Listing(
+        id="seed-dc-2", restaurant_id="rest-002",
+        title="Ethiopian Combo Platter",
+        description="Injera with lentil stew, collard greens, and spiced chickpeas. 20 portions.",
+        quantity=20, dietary_tags=["vegan", "gluten-free", "halal"],
+        pickup_start=_future(0.5), pickup_end=_future(2),
+        status=ListingStatus.active, created_at=_now,
+        address="2201 Georgia Ave NW, Washington, DC 20001",
+        location_name="Addis Market DC",
+        lat=38.9201, lng=-77.0201,
+    ),
+    "seed-dc-3": Listing(
+        id="seed-dc-3", restaurant_id="rest-003",
+        title="BBQ Pulled Pork Sandwiches",
+        description="Slow-cooked pulled pork on brioche buns. Includes coleslaw and pickles. 24 portions.",
+        quantity=24, dietary_tags=["gluten"],
+        pickup_start=_future(0.25), pickup_end=_future(1.5),
+        status=ListingStatus.active, created_at=_now,
+        address="3214 Georgia Ave NW, Washington, DC 20010",
+        location_name="Smoke & Ember BBQ",
+        lat=38.9356, lng=-77.0211,
+    ),
+    "seed-dc-4": Listing(
+        id="seed-dc-4", restaurant_id="rest-004",
+        title="Tomato Bisque & Grilled Cheese",
+        description="Creamy tomato bisque and halved grilled cheese sandwiches. 18 meal combos.",
+        quantity=18, dietary_tags=["vegetarian", "contains_dairy", "gluten"],
+        pickup_start=_future(1), pickup_end=_future(2.5),
+        status=ListingStatus.active, created_at=_now,
+        address="1400 14th St NW, Washington, DC 20005",
+        location_name="The Soup Spot NW",
+        lat=38.9087, lng=-77.0317,
+    ),
+    "seed-dc-5": Listing(
+        id="seed-dc-5", restaurant_id="rest-005",
+        title="Pho & Spring Rolls",
+        description="Beef pho broth with rice noodles and crispy spring rolls. 12 sets.",
+        quantity=12, dietary_tags=["gluten-free"],
+        pickup_start=_future(2), pickup_end=_future(4),
+        status=ListingStatus.active, created_at=_now,
+        address="6763 Wilson Blvd, Falls Church, VA 22044",
+        location_name="Eden Center Pho House",
+        lat=38.8734, lng=-77.1676,
+    ),
+    "seed-dc-6": Listing(
+        id="seed-dc-6", restaurant_id="rest-001",
+        title="Dim Sum Assortment",
+        description="Leftover dim sum from weekend brunch — dumplings, bao, and turnip cakes. ~60 pieces.",
+        quantity=60, dietary_tags=["contains_dairy"],
+        pickup_start=_future(0.5), pickup_end=_future(2),
+        status=ListingStatus.active, created_at=_now,
+        address="418 H St NE, Washington, DC 20002",
+        location_name="Lucky Star Dim Sum",
+        lat=38.8989, lng=-77.0043,
+    ),
+    "seed-dc-7": Listing(
+        id="seed-dc-7", restaurant_id="rest-002",
+        title="Mediterranean Mezze Spread",
+        description="Hummus, baba ganoush, falafel, and pita bread. Serves ~25.",
+        quantity=25, dietary_tags=["vegan", "nut-free"],
+        pickup_start=_future(0.1), pickup_end=_future(1.25),
+        status=ListingStatus.active, created_at=_now,
+        address="1120 19th St NW, Washington, DC 20036",
+        location_name="Zaytinya Catering Overflow",
+        lat=38.9034, lng=-77.0418,
+    ),
+    "seed-dc-8": Listing(
+        id="seed-dc-8", restaurant_id="rest-003",
+        title="Jerk Chicken & Rice and Peas",
+        description="Traditional Jamaican jerk chicken with rice and peas. 22 portions.",
+        quantity=22, dietary_tags=["gluten-free", "halal"],
+        pickup_start=_future(1), pickup_end=_future(3),
+        status=ListingStatus.active, created_at=_now,
+        address="2916 Georgia Ave NW, Washington, DC 20001",
+        location_name="Island Vibes Kitchen",
+        lat=38.9312, lng=-77.0212,
+    ),
+    "seed-dc-9": Listing(
+        id="seed-dc-9", restaurant_id="rest-004",
+        title="Catered Conference Lunch",
+        description="Assorted wraps, pasta salad, and mini desserts from a think-tank event.",
+        quantity=38, dietary_tags=["vegetarian-option", "gluten-free-option"],
+        pickup_start=_future(0.5), pickup_end=_future(2),
+        status=ListingStatus.active, created_at=_now,
+        address="1775 Eye St NW, Washington, DC 20006",
+        location_name="Brookings Event Catering",
+        lat=38.9006, lng=-77.0427,
+    ),
+    "seed-dc-10": Listing(
+        id="seed-dc-10", restaurant_id="rest-005",
+        title="Soba Noodle Bowls",
+        description="Cold soba with dashi broth, tofu, scallions, and nori. 10 portions.",
+        quantity=10, dietary_tags=["vegan", "gluten-free"],
+        pickup_start=_future(1.5), pickup_end=_future(3),
+        status=ListingStatus.active, created_at=_now,
+        address="1512 Connecticut Ave NW, Washington, DC 20036",
+        location_name="Noodle & Miso DC",
+        lat=38.9143, lng=-77.0457,
+    ),
+    "seed-dc-11": Listing(
+        id="seed-dc-11", restaurant_id="rest-001",
+        title="Roast Turkey Dinner Plates",
+        description="Sliced roast turkey with mashed potatoes and gravy, green beans. 15 plates.",
+        quantity=15, dietary_tags=["gluten"],
+        pickup_start=_future(0.5), pickup_end=_future(2),
+        status=ListingStatus.active, created_at=_now,
+        address="8711 Georgia Ave, Silver Spring, MD 20910",
+        location_name="Silver Spring Bistro",
+        lat=38.9967, lng=-77.0271,
+    ),
+    "seed-dc-12": Listing(
+        id="seed-dc-12", restaurant_id="rest-002",
+        title="Bagels & Cream Cheese",
+        description="Assorted bagels (plain, everything, sesame) with cream cheese and lox spread. ~50 bagels.",
+        quantity=50, dietary_tags=["vegetarian", "contains_dairy", "gluten"],
+        pickup_start=_future(0), pickup_end=_future(1),
+        status=ListingStatus.active, created_at=_now,
+        address="930 Bonifant St, Silver Spring, MD 20910",
+        location_name="Bagel Place Silver Spring",
+        lat=38.9939, lng=-77.0292,
+    ),
+    "seed-dc-13": Listing(
+        id="seed-dc-13", restaurant_id="rest-003",
+        title="Pupusas & Curtido",
+        description="Cheese and loroco pupusas with fermented cabbage slaw. 32 pupusas.",
+        quantity=32, dietary_tags=["vegetarian", "contains_dairy", "gluten"],
+        pickup_start=_future(1), pickup_end=_future(3),
+        status=ListingStatus.active, created_at=_now,
+        address="8149 Fenton St, Silver Spring, MD 20910",
+        location_name="La Pupuseria Salvadoreña",
+        lat=38.9924, lng=-77.0276,
+    ),
+    "seed-dc-14": Listing(
+        id="seed-dc-14", restaurant_id="rest-004",
+        title="Loaded Baked Potato Bar",
+        description="Baked potatoes with toppings bar: sour cream, cheddar, broccoli, bacon bits. 20 portions.",
+        quantity=20, dietary_tags=["vegetarian-option", "gluten-free", "contains_dairy"],
+        pickup_start=_future(0.5), pickup_end=_future(2),
+        status=ListingStatus.active, created_at=_now,
+        address="12276 Rockville Pike, Rockville, MD 20852",
+        location_name="The Spud Shack Rockville",
+        lat=39.0570, lng=-77.1236,
+    ),
+    "seed-dc-15": Listing(
+        id="seed-dc-15", restaurant_id="rest-005",
+        title="Crepes — Sweet & Savory",
+        description="Buckwheat galettes (ham/gruyere) and dessert crepes (Nutella). 30 pieces total.",
+        quantity=30, dietary_tags=["vegetarian-option", "contains_dairy", "gluten"],
+        pickup_start=_future(0.25), pickup_end=_future(1.5),
+        status=ListingStatus.active, created_at=_now,
+        address="7711 Woodmont Ave, Bethesda, MD 20814",
+        location_name="Le Crêpe Bethesda",
+        lat=38.9836, lng=-77.0970,
+    ),
+    "seed-dc-16": Listing(
+        id="seed-dc-16", restaurant_id="rest-001",
+        title="Chili & Cornbread",
+        description="Hearty beef and bean chili with jalapeño cornbread muffins. 28 portions.",
+        quantity=28, dietary_tags=["gluten"],
+        pickup_start=_future(1), pickup_end=_future(3),
+        status=ListingStatus.active, created_at=_now,
+        address="4860 Rugby Ave, Bethesda, MD 20814",
+        location_name="Firehouse Chili Co.",
+        lat=38.9784, lng=-77.0942,
+    ),
+    "seed-dc-17": Listing(
+        id="seed-dc-17", restaurant_id="rest-002",
+        title="Tofu & Vegetable Stir Fry",
+        description="Pan-fried tofu with bok choy, snap peas, and ginger soy sauce over brown rice.",
+        quantity=18, dietary_tags=["vegan", "gluten-free"],
+        pickup_start=_future(2), pickup_end=_future(4),
+        status=ListingStatus.active, created_at=_now,
+        address="5765 Burke Centre Pkwy, Burke, VA 22015",
+        location_name="Green Wok VA",
+        lat=38.7887, lng=-77.2750,
+    ),
+    "seed-dc-18": Listing(
+        id="seed-dc-18", restaurant_id="rest-003",
+        title="Lobster Bisque & Crab Cakes",
+        description="Premium surplus from Saturday dinner service — rich bisque and pan-seared crab cakes.",
+        quantity=10, dietary_tags=["gluten", "contains_dairy"],
+        pickup_start=_future(0.5), pickup_end=_future(1.5),
+        status=ListingStatus.active, created_at=_now,
+        address="301 Water St SE, Washington, DC 20003",
+        location_name="The Wharf Seafood Co.",
+        lat=38.8756, lng=-77.0193,
+    ),
+    "seed-dc-19": Listing(
+        id="seed-dc-19", restaurant_id="rest-004",
+        title="Falafel Pita Wraps",
+        description="Crispy falafel, tzatziki, tomatoes, and cucumber in warm pita. 26 wraps.",
+        quantity=26, dietary_tags=["vegetarian", "nut-free"],
+        pickup_start=_future(0.5), pickup_end=_future(2.5),
+        status=ListingStatus.active, created_at=_now,
+        address="2100 P St NW, Washington, DC 20037",
+        location_name="Falafel Kingdom DuPont",
+        lat=38.9107, lng=-77.0480,
+    ),
+    "seed-dc-20": Listing(
+        id="seed-dc-20", restaurant_id="rest-005",
+        title="Chicken Tikka Masala & Naan",
+        description="Rich chicken tikka masala with basmati rice and garlic naan. 20 portions.",
+        quantity=20, dietary_tags=["gluten", "contains_dairy", "halal"],
+        pickup_start=_future(1), pickup_end=_future(3),
+        status=ListingStatus.active, created_at=_now,
+        address="327 8th St NE, Washington, DC 20002",
+        location_name="Spice Garden NE",
+        lat=38.8938, lng=-76.9965,
+    ),
+    "seed-dc-21": Listing(
+        id="seed-dc-21", restaurant_id="rest-001",
+        title="Mac & Cheese — Event Surplus",
+        description="Creamy baked mac and cheese from a birthday party catering. ~40 portions.",
+        quantity=40, dietary_tags=["vegetarian", "contains_dairy", "gluten"],
+        pickup_start=_future(0.25), pickup_end=_future(2),
+        status=ListingStatus.active, created_at=_now,
+        address="4601 Connecticut Ave NW, Washington, DC 20008",
+        location_name="Connecticut Ave Events",
+        lat=38.9441, lng=-77.0773,
+    ),
+    "seed-dc-22": Listing(
+        id="seed-dc-22", restaurant_id="rest-002",
+        title="Gyros & Greek Salad",
+        description="Lamb and chicken gyros with tzatziki, plus side Greek salads. 18 portions.",
+        quantity=18, dietary_tags=["gluten", "contains_dairy"],
+        pickup_start=_future(1), pickup_end=_future(3),
+        status=ListingStatus.active, created_at=_now,
+        address="8661 Colesville Rd, Silver Spring, MD 20910",
+        location_name="Athens Grille Silver Spring",
+        lat=38.9954, lng=-77.0245,
+    ),
+    "seed-dc-23": Listing(
+        id="seed-dc-23", restaurant_id="rest-003",
+        title="Vegetarian Moussaka",
+        description="Eggplant and lentil moussaka with béchamel topping. 14 portions.",
+        quantity=14, dietary_tags=["vegetarian", "contains_dairy", "gluten-free"],
+        pickup_start=_future(2), pickup_end=_future(4),
+        status=ListingStatus.active, created_at=_now,
+        address="7929 Wisconsin Ave, Bethesda, MD 20814",
+        location_name="Bethesda Greek Taverna",
+        lat=38.9855, lng=-77.0963,
+    ),
+    "seed-dc-24": Listing(
+        id="seed-dc-24", restaurant_id="rest-004",
+        title="Cuban Sandwiches & Plantains",
+        description="Pressed Cuban sandwiches and fried sweet plantains. 22 combos.",
+        quantity=22, dietary_tags=["gluten"],
+        pickup_start=_future(0.5), pickup_end=_future(2),
+        status=ListingStatus.active, created_at=_now,
+        address="3176 Bladensburg Rd NE, Washington, DC 20018",
+        location_name="Havana Nights Kitchen",
+        lat=38.9122, lng=-76.9705,
+    ),
+    "seed-dc-25": Listing(
+        id="seed-dc-25", restaurant_id="rest-005",
+        title="Miso Ramen & Karaage Chicken",
+        description="Rich miso ramen with soft-boiled egg and Japanese fried chicken. 8 sets.",
+        quantity=8, dietary_tags=["gluten"],
+        pickup_start=_future(1.5), pickup_end=_future(3),
+        status=ListingStatus.active, created_at=_now,
+        address="5185 MacArthur Blvd NW, Washington, DC 20016",
+        location_name="Sakura Ramen NW",
+        lat=38.9392, lng=-77.1068,
+    ),
+    "seed-dc-26": Listing(
+        id="seed-dc-26", restaurant_id="rest-001",
+        title="Jambalaya — Catering Surplus",
+        description="New Orleans-style jambalaya with andouille sausage, shrimp, and rice. 30 portions.",
+        quantity=30, dietary_tags=["gluten-free"],
+        pickup_start=_future(0.5), pickup_end=_future(2),
+        status=ListingStatus.active, created_at=_now,
+        address="1310 U St NW, Washington, DC 20009",
+        location_name="Bayou Bites U Street",
+        lat=38.9167, lng=-77.0302,
+    ),
+    "seed-dc-27": Listing(
+        id="seed-dc-27", restaurant_id="rest-002",
+        title="Veggie Burgers & Sweet Potato Fries",
+        description="Plant-based burgers on brioche buns with lettuce, tomato, and aioli. 20 meals.",
+        quantity=20, dietary_tags=["vegan", "gluten"],
+        pickup_start=_future(0.25), pickup_end=_future(1.5),
+        status=ListingStatus.active, created_at=_now,
+        address="4910 Wisconsin Ave NW, Washington, DC 20016",
+        location_name="The Green Counter NW",
+        lat=38.9498, lng=-77.0852,
+    ),
+    "seed-dc-28": Listing(
+        id="seed-dc-28", restaurant_id="rest-003",
+        title="Pierogi & Kielbasa Plate",
+        description="Potato and cheese pierogi with grilled kielbasa and sautéed onions. 24 plates.",
+        quantity=24, dietary_tags=["contains_dairy", "gluten"],
+        pickup_start=_future(1), pickup_end=_future(3),
+        status=ListingStatus.active, created_at=_now,
+        address="7600 Georgia Ave NW, Washington, DC 20012",
+        location_name="Polka Dot Kitchen",
+        lat=38.9754, lng=-77.0260,
+    ),
+    "seed-dc-29": Listing(
+        id="seed-dc-29", restaurant_id="rest-004",
+        title="Moroccan Tagine with Couscous",
+        description="Lamb and apricot tagine over fluffy couscous with harissa on the side. 16 portions.",
+        quantity=16, dietary_tags=["gluten", "halal"],
+        pickup_start=_future(2), pickup_end=_future(4),
+        status=ListingStatus.active, created_at=_now,
+        address="2134 Columbia Rd NW, Washington, DC 20009",
+        location_name="Marrakesh Table",
+        lat=38.9247, lng=-77.0417,
+    ),
+    "seed-dc-30": Listing(
+        id="seed-dc-30", restaurant_id="rest-005",
+        title="Breakfast Buffet Takeaway",
+        description="Scrambled eggs, turkey bacon, hash browns, and fruit salad from a morning meeting.",
+        quantity=35, dietary_tags=["gluten-free", "dairy-free"],
+        pickup_start=_future(0), pickup_end=_future(0.75),
+        status=ListingStatus.active, created_at=_now,
+        address="1100 Wilson Blvd, Arlington, VA 22209",
+        location_name="Rosslyn Conference Center",
+        lat=38.8962, lng=-77.0724,
     ),
 }
 
@@ -1103,6 +1646,47 @@ def admin_get_stats(_: UserInDB = Depends(require_roles("admin"))):
         meals_saved=meals_saved,
     )
     return ok(stats.model_dump())
+
+
+@app.post("/api/v1/client-errors/map")
+def log_map_client_error(
+    payload: MapErrorReport,
+    current_user: UserInDB | None = Depends(get_optional_user),
+):
+    """
+    Receive map/runtime errors from the frontend so crashes can be diagnosed
+    from backend logs even when browser console output is unavailable.
+    """
+    entry = _archive_map_error(payload=payload, user=current_user)
+
+    # Choose log level to match what the client reported
+    _log = {
+        "warn": map_client_logger.warning,
+        "info": map_client_logger.info,
+    }.get(entry.level, map_client_logger.error)
+
+    lines = [
+        f"[map-client] {entry.code}  user={entry.user_id or 'anonymous'}",
+        f"  source : {entry.source}",
+        f"  message: {entry.message}",
+    ]
+    if entry.url:
+        lines.append(f"  url    : {entry.url}")
+    if entry.context:
+        lines.append(f"  context: {entry.context}")
+    if entry.stack:
+        lines.append("  stack  :")
+        for stack_line in entry.stack.splitlines():
+            lines.append(f"    {stack_line}")
+
+    _log("\n".join(lines))
+    return ok({"logged": True, "id": entry.id}, "Map error logged")
+
+
+@app.get("/api/v1/admin/map-errors")
+def admin_get_map_errors(_: UserInDB = Depends(require_roles("admin"))):
+    archived = [entry.model_dump(mode="json") for entry in reversed(_map_error_archive)]
+    return ok(archived)
 
 
 @app.get("/api/v1/admin/login-archive")
