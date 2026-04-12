@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 
-const ROLE_HOME = { recipient: '/browse', restaurant: '/restaurant', admin: '/admin', partner: '/browse' }
+const ROLE_HOME = { recipient: '/browse', restaurant: '/restaurant', admin: '/admin', partner: '/partner' }
 
 const DEMO_USERS = [
   { label: 'Admin',      email: 'admin@mealmatch.dev',      pw: 'Admin1234!' },
   { label: 'Restaurant', email: 'restaurant@mealmatch.dev', pw: 'Restaurant1!' },
   { label: 'Recipient',  email: 'recipient@mealmatch.dev',  pw: 'Recipient1!', ebtCard: '6001000000001201', ebtPin: '2468' },
+  { label: 'Partner',    email: 'partner@mealmatch.dev',    pw: 'Partner1234!' },
 ]
 
 export default function LoginPage() {

@@ -5,7 +5,7 @@ const ROLE_HOME = {
   recipient:  '/browse',
   restaurant: '/restaurant',
   admin:      '/admin',
-  partner:    '/browse',
+  partner:    '/partner',
 }
 
 const HOW_IT_WORKS = [

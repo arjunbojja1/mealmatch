@@ -58,7 +58,7 @@ function AppShell() {
   }, [menuOpen])
 
   const allTabs = [
-    { key: 'browse',     label: 'Browse Food',   path: '/browse',     roles: ['recipient', 'admin'] },
+    { key: 'browse',     label: 'Browse Food',   path: '/browse',     roles: ['recipient', 'partner', 'admin'] },
     { key: 'my-claims',  label: 'My Claims',      path: '/my-claims',  roles: ['recipient'] },
     { key: 'restaurant', label: 'Restaurant',     path: '/restaurant', roles: ['restaurant', 'admin'] },
     { key: 'admin',      label: 'Admin',          path: '/admin',      roles: ['admin'] },
@@ -245,7 +245,7 @@ export default function App() {
               </ProtectedRoute>
             }
           >
-            <Route path="browse" element={<ProtectedRoute allowedRoles={['recipient', 'admin']}><RecipientFeed /></ProtectedRoute>} />
+            <Route path="browse" element={<ProtectedRoute allowedRoles={['recipient', 'partner', 'admin']}><RecipientFeed /></ProtectedRoute>} />
             <Route path="restaurant" element={<ProtectedRoute allowedRoles={['restaurant', 'admin']}><RestaurantDashboard /></ProtectedRoute>} />
             <Route path="my-claims" element={<ProtectedRoute allowedRoles={['recipient']}><MyClaimsPage /></ProtectedRoute>} />
             <Route path="admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
