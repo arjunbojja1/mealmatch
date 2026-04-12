@@ -68,23 +68,28 @@ export default function RecipientFeed() {
     if (!listing?.location) return;
     pendingNavFiredRef.current = true;
 
+    let cancelled = false;
     const t = setTimeout(async () => {
       // Retry up to 3 × 150ms if mapRef not yet assigned (safety net for slow mounts)
       let attempts = 0;
       while (!mapRef.current?.startNavigation && attempts < 3) {
         await new Promise((r) => setTimeout(r, 150));
         attempts++;
+        if (cancelled) return;
       }
+      if (cancelled) return;
       if (!mapRef.current?.startNavigation) {
         console.warn("[MealMatch] MAP_NAV_REF_MISSING: mapRef not ready after retries");
+        // Unblock focusedId so the map isn't permanently frozen
+        setNavIntentActive(false);
         return;
       }
       await mapRef.current.startNavigation(listing, pendingNav.navMode);
       // Intent consumed — clear AFTER startNavigation resolves so navTarget guard is active
-      setNavIntentActive(false);
+      if (!cancelled) setNavIntentActive(false);
     }, 400);
 
-    return () => clearTimeout(t);
+    return () => { cancelled = true; clearTimeout(t); };
   }, [pendingNav, focusedListingId, listings, isLoading]);
 
   // Pre-populate justClaimedIds from My Claims so returning users see "Claimed" state
