@@ -318,7 +318,7 @@ export default function RecipientFeed() {
     setClaimingIds((prev) => new Set(prev).add(listing.id));
 
     try {
-      await apiClaimListing(listing.id, userId, requestedQuantity, selectedSlot);
+      await apiClaimListing(listing.id, requestedQuantity, selectedSlot);
       setJustClaimedIds((prev) => new Set(prev).add(listing.id));
       showNotification(
         `Pickup secured for ${requestedQuantity} item${requestedQuantity > 1 ? "s" : ""}.`,

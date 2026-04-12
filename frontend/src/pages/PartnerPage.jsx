@@ -40,7 +40,7 @@ export default function PartnerPage() {
   useEffect(() => { fetchListings(); }, [fetchListings]);
 
   const showNotification = useCallback((msg, type = "success") => {
-    setNotification({ msg, type, id: Date.now() });
+    setNotification({ message: msg, type, id: Date.now() });
     setTimeout(() => setNotification(null), 3500);
   }, []);
 
@@ -60,7 +60,7 @@ export default function PartnerPage() {
 
     setClaimingIds(prev => new Set(prev).add(listing.id));
     try {
-      await bulkClaimListing(listing.id, userId, qty, { slotId, groupName: group, contactInfo: contact });
+      await bulkClaimListing(listing.id, qty, { slotId, groupName: group, contactInfo: contact });
       setClaimedIds(prev => new Set(prev).add(listing.id));
       showNotification(`Bulk claim of ${qty} item${qty > 1 ? "s" : ""} confirmed.`, "success");
       await fetchListings();
@@ -218,7 +218,7 @@ export default function PartnerPage() {
         </div>
       )}
 
-      <Notification notification={notification ? { ...notification, message: notification.msg } : null} />
+      <Notification notification={notification} />
     </PageLayout>
   );
 }

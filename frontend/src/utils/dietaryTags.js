@@ -40,3 +40,10 @@ export function getDietaryTagIcon(tag) {
 export function formatDietaryTagWithIcon(tag) {
   return `${getDietaryTagIcon(tag)} ${formatDietaryTag(tag)}`;
 }
+
+export function normalizeDietaryTag(tag) {
+  return String(tag || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+}

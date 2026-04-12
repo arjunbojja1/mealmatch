@@ -197,15 +197,14 @@ export function createListing(listing) {
   return post('/api/v1/listings', listing)
 }
 
-export function claimListing(listingId, userId, claimedQuantity, slotId = null) {
-  const body = { user_id: userId, claimed_quantity: claimedQuantity }
+export function claimListing(listingId, claimedQuantity, slotId = null) {
+  const body = { claimed_quantity: claimedQuantity }
   if (slotId) body.slot_id = slotId
   return post(`/api/v1/listings/${listingId}/claim`, body)
 }
 
-export function bulkClaimListing(listingId, userId, claimedQuantity, options = {}) {
+export function bulkClaimListing(listingId, claimedQuantity, options = {}) {
   return post(`/api/v1/listings/${listingId}/bulk-claim`, {
-    user_id: userId,
     claimed_quantity: claimedQuantity,
     slot_id: options.slotId || null,
     group_name: options.groupName || '',

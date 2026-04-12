@@ -9,6 +9,7 @@ import { useAuth } from "./auth/useAuth";
 import {
   formatDietaryTag as formatTag,
   formatDietaryTagWithIcon as formatTagWithIcon,
+  normalizeDietaryTag,
 } from "./utils/dietaryTags";
 
 const dietaryOptions = [
@@ -169,7 +170,6 @@ export default function RestaurantDashboard() {
     }
 
     const payload = {
-      restaurant_id: restaurantId,
       title: formData.title,
       description: formData.description,
       quantity: Number(formData.quantity),
@@ -726,10 +726,6 @@ export default function RestaurantDashboard() {
       </div>
     </div>
   );
-}
-
-function normalizeDietaryTag(tag) {
-  return tag.trim().toLowerCase().replace(/\s+/g, "_");
 }
 
 function formatDate(dateString) {
