@@ -21,7 +21,26 @@ import {
 const DEFAULT_CENTER = { lat: 38.9869, lng: -76.9426 }
 const DEFAULT_ZOOM = 13
 
+const NAV_MODES_MAP = [
+  { key: 'driving',   icon: '🚗', label: 'Drive' },
+  { key: 'walking',   icon: '🚶', label: 'Walk' },
+  { key: 'bicycling', icon: '🚴', label: 'Bike' },
+  { key: 'transit',   icon: '🚌', label: 'Transit' },
+]
 
+function MarkerPin({ variant = 'default', onClick }) {
+  const base = {
+    width: 20, height: 20, borderRadius: '50%',
+    border: '2.5px solid rgba(255,255,255,0.9)',
+    cursor: 'pointer', transition: 'transform 0.15s',
+  }
+  const variants = {
+    default: { background: 'var(--mm-brand)', boxShadow: '0 2px 8px rgba(22,163,74,0.45)' },
+    active:  { background: '#15803d', boxShadow: '0 2px 12px rgba(22,163,74,0.8)', transform: 'scale(1.12)' },
+    nav:     { background: '#3b82f6', boxShadow: '0 2px 12px rgba(59,130,246,0.65)' },
+  }
+  return <div style={{ ...base, ...(variants[variant] ?? variants.default) }} onClick={onClick} />
+}
 
 // OpenStreetMap tile style — no API key required
 const MAP_STYLE = {

@@ -33,9 +33,9 @@ const HOW_IT_WORKS = [
 ]
 
 const PILLARS = [
-  { title: 'Rescue surplus food',    text: 'Turn end-of-day inventory into real meals instead of waste.' },
-  { title: 'Match it fast',          text: 'Simple discovery and claim flow for every recipient.' },
-  { title: 'Strengthen local care',  text: 'Restaurants, neighbors, and admins coordinating around impact.' },
+  { icon: '🥡', title: 'Rescue surplus food',    text: 'Turn end-of-day inventory into real meals instead of waste.' },
+  { icon: '⚡', title: 'Match it fast',          text: 'Simple discovery and claim flow for every recipient.' },
+  { icon: '🤝', title: 'Strengthen local care',  text: 'Restaurants, neighbors, and admins coordinating around impact.' },
 ]
 
 const AUDIENCE = [
@@ -159,8 +159,8 @@ export default function HomePage() {
           <div className="mm-home-pillars">
             {PILLARS.map((p) => (
               <div key={p.title} className="mm-home-pillar">
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--mm-brand-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14, fontSize: 16 }}>
-                  🌱
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--mm-brand-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14, fontSize: 18 }}>
+                  {p.icon}
                 </div>
                 <p className="mm-home-pillar-title">{p.title}</p>
                 <p className="mm-home-pillar-text">{p.text}</p>

@@ -52,6 +52,126 @@ function ActivityBar({ label, value, total, color, helper }) {
   );
 }
 
+function LoginArchiveTable({ entries }) {
+  if (entries.length === 0) return <div style={s.panelEmpty}>No login attempts archived yet.</div>;
+  return (
+    <div style={s.loginArchiveList}>
+      {entries.slice(0, 6).map((entry) => (
+        <div key={entry.id} style={s.loginArchiveRow}>
+          <div style={s.loginArchiveTop}>
+            <div style={s.loginArchiveEmail}>{entry.email}</div>
+            <span className={`mm-badge ${entry.success ? "mm-badge-success" : "mm-badge-error"}`} style={{ fontSize: 10 }}>
+              {entry.success ? "success" : entry.code}
+            </span>
+          </div>
+          <div style={s.loginArchiveMeta}>
+            {entry.role || "unknown role"} · {formatDateTime(entry.created_at)}
+            {entry.requires_ebt ? " · EBT checked" : ""}
+            {entry.ebt_last4 ? ` · card •••• ${entry.ebt_last4}` : ""}
+          </div>
+          <div style={s.loginArchiveMessage}>{entry.message}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ListingsTable({ listings, actionId, onStatusUpdate, onDelete }) {
+  if (listings.length === 0) return null;
+  return (
+    <div style={s.cardGrid}>
+      {listings.map((listing) => {
+        const isActing = actionId === listing.id;
+        return (
+          <div key={listing.id} className="mm-card" style={s.card}>
+            <div style={s.cardHeader}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h3 style={s.cardTitle}>{listing.title}</h3>
+                <div style={s.cardMeta}>
+                  Restaurant: <span style={{ color: "var(--mm-brand)", fontWeight: 600 }}>{listing.restaurant_id}</span>
+                </div>
+              </div>
+              <span
+                className={`mm-badge ${
+                  listing.status === "active"  ? "mm-badge-success" :
+                  listing.status === "claimed" ? "mm-badge-brand"   :
+                  "mm-badge-neutral"
+                }`}
+                style={{ textTransform: "capitalize", flexShrink: 0 }}
+              >
+                {listing.status}
+              </span>
+            </div>
+
+            <p style={s.cardDescription}>{listing.description}</p>
+
+            <div style={s.infoGrid}>
+              <div style={s.infoBlock}>
+                <div style={s.infoLabel}>Quantity</div>
+                <div style={s.infoValue}>{listing.quantity}</div>
+              </div>
+              <div style={s.infoBlock}>
+                <div style={s.infoLabel}>Pickup Start</div>
+                <div style={s.infoValue}>{formatDateTime(listing.pickup_start)}</div>
+              </div>
+              <div style={s.infoBlock}>
+                <div style={s.infoLabel}>Pickup End</div>
+                <div style={s.infoValue}>{formatDateTime(listing.pickup_end)}</div>
+              </div>
+              <div style={s.infoBlock}>
+                <div style={s.infoLabel}>Created</div>
+                <div style={s.infoValue}>{formatDateTime(listing.created_at)}</div>
+              </div>
+            </div>
+
+            {listing.dietary_tags?.length > 0 && (
+              <div style={s.tagRow}>
+                {listing.dietary_tags.map((tag) => (
+                  <span key={tag} className="mm-badge mm-badge-neutral" style={{ fontSize: 11 }}>
+                    {formatTagWithIcon(tag)}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div style={{ fontSize: 11, color: "var(--mm-text-4)", fontFamily: "ui-monospace, Consolas, monospace" }}>
+              ID: <span style={{ color: "var(--mm-text-3)" }}>{listing.id}</span>
+            </div>
+
+            <div style={s.actionRow}>
+              {listing.status !== "expired" && (
+                <button
+                  onClick={() => onStatusUpdate(listing.id, "expired")}
+                  disabled={isActing}
+                  className="mm-btn mm-btn-ghost mm-btn-sm"
+                >
+                  Mark Expired
+                </button>
+              )}
+              {listing.status === "active" && (
+                <button
+                  onClick={() => onStatusUpdate(listing.id, "claimed")}
+                  disabled={isActing}
+                  className="mm-btn mm-btn-primary mm-btn-sm"
+                >
+                  Mark Claimed
+                </button>
+              )}
+              <button
+                onClick={() => onDelete(listing.id, listing.title)}
+                disabled={isActing}
+                className="mm-btn mm-btn-danger mm-btn-sm"
+              >
+                {isActing ? "Working…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ImpactMetric({ label, value, detail, accent }) {
   return (
     <div className="mm-card" style={s.impactMetricCard}>
@@ -157,9 +277,9 @@ export default function AdminDashboard() {
   );
 
   const tabs = [
-    { key: "active",  label: "Active",  count: active.length,  data: active },
-    { key: "claimed", label: "Claimed", count: claimed.length, data: claimed },
-    { key: "expired", label: "Expired", count: expired.length, data: expired },
+    { key: "active",  label: "Active",  count: active.length,  data: active,  dot: "#16A34A" },
+    { key: "claimed", label: "Claimed", count: claimed.length, data: claimed, dot: "#D97706" },
+    { key: "expired", label: "Expired", count: expired.length, data: expired, dot: "#2563EB" },
   ];
 
   const currentListings = tabs.find((tab) => tab.key === selectedTab)?.data ?? [];
@@ -382,28 +502,7 @@ export default function AdminDashboard() {
           {/* Login archive */}
           <div className="mm-card" style={s.activityPanel}>
             <div style={s.panelTitle}>Login Archive</div>
-            {loginArchive.length === 0 ? (
-              <div style={s.panelEmpty}>No login attempts archived yet.</div>
-            ) : (
-              <div style={s.loginArchiveList}>
-                {loginArchive.slice(0, 6).map((entry) => (
-                  <div key={entry.id} style={s.loginArchiveRow}>
-                    <div style={s.loginArchiveTop}>
-                      <div style={s.loginArchiveEmail}>{entry.email}</div>
-                      <span className={`mm-badge ${entry.success ? "mm-badge-success" : "mm-badge-error"}`} style={{ fontSize: 10 }}>
-                        {entry.success ? "success" : entry.code}
-                      </span>
-                    </div>
-                    <div style={s.loginArchiveMeta}>
-                      {entry.role || "unknown role"} · {formatDateTime(entry.created_at)}
-                      {entry.requires_ebt ? " · EBT checked" : ""}
-                      {entry.ebt_last4 ? ` · card •••• ${entry.ebt_last4}` : ""}
-                    </div>
-                    <div style={s.loginArchiveMessage}>{entry.message}</div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <LoginArchiveTable entries={loginArchive} />
           </div>
         </div>
       </div>
@@ -415,7 +514,9 @@ export default function AdminDashboard() {
             key={tab.key}
             onClick={() => setSelectedTab(tab.key)}
             className={`mm-btn mm-btn-sm ${selectedTab === tab.key ? "mm-btn-primary" : "mm-btn-ghost"}`}
+            style={{ display: "flex", alignItems: "center", gap: 6 }}
           >
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: tab.dot, flexShrink: 0, boxShadow: selectedTab === tab.key ? `0 0 0 2px ${tab.dot}44` : "none" }} />
             {tab.label}
             <span style={{
               padding: "2px 7px",
@@ -458,98 +559,13 @@ export default function AdminDashboard() {
       )}
 
       {/* Listing cards */}
-      {!loading && currentListings.length > 0 && (
-        <div style={s.cardGrid}>
-          {currentListings.map((listing) => {
-            const isActing = actionId === listing.id;
-
-            return (
-              <div key={listing.id} className="mm-card" style={s.card}>
-                <div style={s.cardHeader}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <h3 style={s.cardTitle}>{listing.title}</h3>
-                    <div style={s.cardMeta}>
-                      Restaurant: <span style={{ color: "var(--mm-brand)", fontWeight: 600 }}>{listing.restaurant_id}</span>
-                    </div>
-                  </div>
-                  <span
-                    className={`mm-badge ${
-                      listing.status === "active"  ? "mm-badge-success" :
-                      listing.status === "claimed" ? "mm-badge-brand"   :
-                      "mm-badge-neutral"
-                    }`}
-                    style={{ textTransform: "capitalize", flexShrink: 0 }}
-                  >
-                    {listing.status}
-                  </span>
-                </div>
-
-                <p style={s.cardDescription}>{listing.description}</p>
-
-                <div style={s.infoGrid}>
-                  <div style={s.infoBlock}>
-                    <div style={s.infoLabel}>Quantity</div>
-                    <div style={s.infoValue}>{listing.quantity}</div>
-                  </div>
-                  <div style={s.infoBlock}>
-                    <div style={s.infoLabel}>Pickup Start</div>
-                    <div style={s.infoValue}>{formatDateTime(listing.pickup_start)}</div>
-                  </div>
-                  <div style={s.infoBlock}>
-                    <div style={s.infoLabel}>Pickup End</div>
-                    <div style={s.infoValue}>{formatDateTime(listing.pickup_end)}</div>
-                  </div>
-                  <div style={s.infoBlock}>
-                    <div style={s.infoLabel}>Created</div>
-                    <div style={s.infoValue}>{formatDateTime(listing.created_at)}</div>
-                  </div>
-                </div>
-
-                {listing.dietary_tags?.length > 0 && (
-                  <div style={s.tagRow}>
-                    {listing.dietary_tags.map((tag) => (
-                      <span key={tag} className="mm-badge mm-badge-neutral" style={{ fontSize: 11 }}>
-                        {formatTagWithIcon(tag)}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                <div style={{ fontSize: 11, color: "var(--mm-text-4)", fontFamily: "ui-monospace, Consolas, monospace" }}>
-                  ID: <span style={{ color: "var(--mm-text-3)" }}>{listing.id}</span>
-                </div>
-
-                <div style={s.actionRow}>
-                  {listing.status !== "expired" && (
-                    <button
-                      onClick={() => handleStatusUpdate(listing.id, "expired")}
-                      disabled={isActing}
-                      className="mm-btn mm-btn-ghost mm-btn-sm"
-                    >
-                      Mark Expired
-                    </button>
-                  )}
-                  {listing.status === "active" && (
-                    <button
-                      onClick={() => handleStatusUpdate(listing.id, "claimed")}
-                      disabled={isActing}
-                      className="mm-btn mm-btn-primary mm-btn-sm"
-                    >
-                      Mark Claimed
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleDelete(listing.id, listing.title)}
-                    disabled={isActing}
-                    className="mm-btn mm-btn-danger mm-btn-sm"
-                  >
-                    {isActing ? "Working…" : "Delete"}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      {!loading && (
+        <ListingsTable
+          listings={currentListings}
+          actionId={actionId}
+          onStatusUpdate={handleStatusUpdate}
+          onDelete={handleDelete}
+        />
       )}
     </div>
   );

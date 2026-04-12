@@ -125,28 +125,33 @@ function AppShell() {
           {/* Right side */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             {/* User pill — desktop */}
-            <div
-              className="mm-hide-mobile"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '6px 12px', borderRadius: 'var(--mm-r-full)',
-                background: 'rgba(22,163,74,.12)',
-                border: '1px solid rgba(22,163,74,.24)',
-              }}
-            >
-              <span style={{ fontSize: 13, fontWeight: 500, color: '#E2FBE8', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {user?.name || 'User'}
-              </span>
-              <span style={{ fontSize: 10, fontWeight: 700, color: '#86EFAC', textTransform: 'uppercase', letterSpacing: '.07em' }}>
-                {user?.role}
-              </span>
-              <button
-                onClick={() => { logout(); window.location.assign('/') }}
-                style={{ background: 'none', border: 'none', color: 'rgba(226,251,232,.78)', fontSize: 12, cursor: 'pointer', padding: '2px 4px', borderRadius: 4, transition: 'color var(--mm-dur)' }}
-              >
-                Sign out
-              </button>
-            </div>
+            {(() => {
+              const rc = ROLE_COLOR[user?.role] || '#16A34A'
+              return (
+                <div
+                  className="mm-hide-mobile"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '6px 12px', borderRadius: 'var(--mm-r-full)',
+                    background: `${rc}1F`,
+                    border: `1px solid ${rc}3D`,
+                  }}
+                >
+                  <span style={{ fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.9)', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {user?.name || 'User'}
+                  </span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: rc, textTransform: 'uppercase', letterSpacing: '.07em' }}>
+                    {user?.role}
+                  </span>
+                  <button
+                    onClick={() => { logout(); window.location.assign('/') }}
+                    style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', fontSize: 12, cursor: 'pointer', padding: '2px 4px', borderRadius: 4 }}
+                  >
+                    Sign out
+                  </button>
+                </div>
+              )
+            })()}
 
             {/* Hamburger — mobile */}
             <button
