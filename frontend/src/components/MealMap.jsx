@@ -201,13 +201,13 @@ function MarkerPin({ variant = 'default', onClick }) {
 // ─── useNavigation hook ──────────────────────────────────────────────────────
 
 function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart }) {
-  const mountedRef         = useRef(true)
-  const watchIdRef         = useRef(null)
-  const navTargetRef       = useRef(null)
-  const navModeRef         = useRef('driving')
-  const navStepsRef        = useRef([])
-  const stepIdxRef         = useRef(0)
-  const routeCoordsRef     = useRef(null)
+  const mountedRef           = useRef(true)
+  const watchIdRef           = useRef(null)
+  const navTargetRef         = useRef(null)
+  const navModeRef           = useRef('driving')
+  const navStepsRef          = useRef([])
+  const routeCoordsRef       = useRef(null)
+  const changeModeInFlightRef = useRef(false)
   const isRecalcRef        = useRef(false)
   const lastRecalcLocRef   = useRef(null)
   const fitDoneRef         = useRef(false)
@@ -244,7 +244,6 @@ function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart }) {
   // Sync refs used inside async callbacks
   useEffect(() => { navStepsRef.current = navSteps }, [navSteps])
   useEffect(() => { navTargetRef.current = navTarget }, [navTarget])
-  useEffect(() => { stepIdxRef.current = stepIdx }, [stepIdx])
 
   // Safe numeric location for navTarget (fixes string-coord bug)
   const navTargetLoc = useMemo(
@@ -387,7 +386,7 @@ function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart }) {
       }
 
       navTargetRef.current = listing
-      navModeRef.current = OSRM_PROFILE[mode] ?? 'walking'
+      navModeRef.current = mode  // raw key; fetchRoute handles OSRM translation
       fitDoneRef.current = false
       isRecalcRef.current = false
       lastRecalcLocRef.current = null
@@ -574,10 +573,12 @@ function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart }) {
 
   // ── changeMode ──────────────────────────────────────────────────────────────
   // Immediately clears stale route data so the panel shows "Calculating..."
+  // Uses a ref-based lock to guard against concurrent calls (not just navLoading state).
   const changeMode = useCallback(async (newMode) => {
-    if (newMode === navMode || navLoading) return
+    if (newMode === navMode || changeModeInFlightRef.current) return
+    changeModeInFlightRef.current = true
     setNavMode(newMode)
-    navModeRef.current = OSRM_PROFILE[newMode] ?? 'walking'
+    navModeRef.current = newMode  // raw key; fetchRoute handles OSRM translation
     // Clear stale data immediately
     setNavSteps([])
     setStepIdx(0)
@@ -586,12 +587,16 @@ function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart }) {
     setNavError(null)
     setRollingSpeed(null)
     speedSamplesRef.current = []
-    if (!navTarget || !userLoc) return
+    if (!navTarget || !userLoc) {
+      changeModeInFlightRef.current = false
+      return
+    }
     fitDoneRef.current = false
     setNavLoading(true)
     await fetchRoute(navTarget, userLoc, newMode)
     if (mountedRef.current) setNavLoading(false)
-  }, [navMode, navLoading, navTarget, userLoc, fetchRoute])
+    changeModeInFlightRef.current = false
+  }, [navMode, navTarget, userLoc, fetchRoute])
 
   // ── handleRecenter ──────────────────────────────────────────────────────────
   const handleRecenter = useCallback(() => {
@@ -692,6 +697,9 @@ const MealMap = forwardRef(function MealMap(
     [],
   )
 
+  // Stable callback so startNavigation's deps don't change every render
+  const onNavigationStart = useCallback(() => setPopupId(null), [])
+
   const {
     navState,
     startNavigation,
@@ -703,7 +711,7 @@ const MealMap = forwardRef(function MealMap(
     mapRef,
     mapReady,
     logMapError,
-    onNavigationStart: () => setPopupId(null),
+    onNavigationStart,
   })
 
   const {
