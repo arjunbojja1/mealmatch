@@ -144,7 +144,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # Auth constants
 # ---------------------------------------------------------------------------
 
-JWT_SECRET = "mealmatch-dev-secret-change-before-production"
+JWT_SECRET = os.getenv("JWT_SECRET", "mealmatch-dev-secret-change-before-production")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
