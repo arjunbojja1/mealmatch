@@ -83,13 +83,20 @@
 
 ### 3.5 Standardize Empty/Loading/Error States
 - RecipientFeed, RestaurantDashboard, AdminDashboard all use `LoadingSkeleton`, `EmptyState`, `ErrorState` from `components/ui/EmptyState.jsx`
+- RecipientFeed's loading state is custom inline HTML — replace with `LoadingSkeleton` (update the component to accept a `grid` prop for 3-column card skeletons to match the feed layout)
 - Remove any one-off inline skeleton/empty implementations
 
-### 3.6 PartnerPage Polish
-- Read current implementation and apply same design system pass
-- Ensure loading, empty, and error states are handled consistently
+### 3.6 RecipientFeed `s.` Style Object Elimination
+- `RecipientFeed.jsx` has a ~200-line `const s = { ... }` inline style object (same pattern as AdminDashboard)
+- Convert to `mm-*` design system classes: stats row uses `mm-stats-card`/`mm-stats-card-value`/`mm-stats-card-label` (already defined in CSS), listing cards use `mm-card`, info blocks use existing utility classes
+- Add any missing utility classes to `index.css` as needed
 
-### 3.7 HomePage Pillar Icons
+### 3.7 PartnerPage Notification Bug + Polish
+- Bug: notification state uses `msg` key but `Notification` component expects `message` — the workaround at line 221 is fragile; fix the state shape to use `message` directly
+- Apply same `mm-*` polish pass: ensure error state uses `ErrorState` component, not inline alert
+- `mm-label` vs `mm-field-label` inconsistency: PartnerPage and RestaurantDashboard use `mm-label`; Login/Signup use `mm-field-label`. Both classes exist in CSS. Standardize all form labels to `mm-field-label` since it's the more descriptive name and already used on auth pages.
+
+### 3.8 HomePage Pillar Icons
 - Replace the three identical `🌱` icons with distinct, relevant icons:
   - "Rescue surplus food" → `🥡`
   - "Match it fast" → `⚡`
@@ -101,8 +108,9 @@
 
 ### 4.1 `useNavigation` hook — extracted from `MealMap.jsx`
 - **File:** `frontend/src/hooks/useNavigation.js`
+- **Note:** `useNavigation` is already defined as a function inside `MealMap.jsx` (line ~203) — this is a file move, not a refactor. Lower risk than initially estimated.
 - **Contains:** OSRM route fetching, navigation state machine (idle → navigating → arrived), step tracking, reroute logic, ETA calculation
-- **Interface:** `useNavigation({ mapRef, onError })` → `{ navState, startNavigation, stopNavigation, changeMode }`
+- **Actual interface (from code):** `useNavigation({ mapRef, mapReady, logMapError, onNavigationStart })` → `{ navState, startNavigation, clearNav, changeMode, handleRecenter, setFollowUser }`
 - `MealMap.jsx` calls this hook; map rendering, popups, markers, route layer remain in `MealMap.jsx`
 
 ### 4.2 `ListingCard` component — extracted from `RecipientFeed.jsx`
@@ -125,7 +133,32 @@
 
 ## Section 5: Tests
 
-All tests use `pytest` + `fastapi.testclient`. No new dependencies.
+### Frontend Test Setup
+Install: `npm install -D vitest @testing-library/react @testing-library/jest-dom jsdom`
+Add to `frontend/vite.config.js`: `test: { environment: 'jsdom', setupFiles: ['./src/test/setup.js'] }`
+Create `frontend/src/test/setup.js`: imports `@testing-library/jest-dom`
+
+### 5.0 `frontend/src/utils/dietaryTags.test.js`
+- `formatDietaryTag('vegan')` returns `'Vegan'`
+- `formatDietaryTagWithIcon('halal')` includes the halal icon
+- Unknown tag returns the raw string (graceful fallback)
+- `normalizeDietaryTag('  Vegan  ')` normalizes to `'vegan'`
+
+### 5.1 `frontend/src/components/ListingCard.test.jsx`
+- Renders listing title and location
+- Shows "Claimed" state (disabled button + neutral badge) when `justClaimed` is true
+- Shows "Urgent" badge when `minutesLeft <= 30`
+- Calls `onClaim` when "Reserve pickup" is clicked
+
+### 5.2 `frontend/src/hooks/useNavigation.test.js`
+- Unit test pure utility functions extracted alongside the hook: `formatDist`, `formatDuration`, `stepIcon`, `stepText`
+- `formatDist(0)` → `'0 ft'`, `formatDist(1609)` → `'1.0 mi'`
+- `formatDuration(90)` → `'2 min'`, `formatDuration(3660)` → `'1 hr 1 min'`
+- `stepIcon({ type: 'arrive' })` → `'⚑'`
+
+### Backend tests (no new dependencies)
+
+All backend tests use `pytest` + `fastapi.testclient`.
 
 ### 5.1 `backend/tests/test_claims.py`
 - Claiming a listing decrements quantity correctly
@@ -149,9 +182,13 @@ All tests use `pytest` + `fastapi.testclient`. No new dependencies.
 ---
 
 ## Files to Create
-- `frontend/src/hooks/useNavigation.js`
+- `frontend/src/hooks/useNavigation.js` (moved from MealMap.jsx)
 - `frontend/src/components/ListingCard.jsx`
 - `frontend/src/components/ListingForm.jsx`
+- `frontend/src/test/setup.js`
+- `frontend/src/utils/dietaryTags.test.js`
+- `frontend/src/components/ListingCard.test.jsx`
+- `frontend/src/hooks/useNavigation.test.js`
 - `backend/tests/test_claims.py`
 - `backend/tests/test_auth.py`
 - `backend/tests/test_listings.py`
@@ -159,6 +196,8 @@ All tests use `pytest` + `fastapi.testclient`. No new dependencies.
 ## Files to Modify
 - `backend/main.py` — JWT env var, remove user_id/restaurant_id from schemas, listings/claims persistence
 - `frontend/src/api/client.js` — remove user_id param from claimListing / bulkClaim call signatures
+- `frontend/vite.config.js` — add Vitest test config block
+- `frontend/package.json` — add vitest + @testing-library devDependencies
 - `backend/db/repository.py` — add ListingRepository + ClaimRepository (SQLite)
 - `frontend/src/App.jsx` — role-colored header pill
 - `frontend/src/components/MealMap.jsx` — extract useNavigation, keep rendering
