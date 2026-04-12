@@ -91,7 +91,7 @@ export default function RecipientFeed() {
   const { user } = useAuth();
   const userId = user?.id || "user-demo";
 
-  const fetchListings = async () => {
+  const fetchListings = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
@@ -102,13 +102,13 @@ export default function RecipientFeed() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchListings();
     const interval = setInterval(fetchListings, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchListings]);
 
   // Auto-start in-app navigation when arriving from My Claims with autoNav state.
   // pendingNavFiredRef prevents retrigger on every 15s listing poll.
@@ -324,7 +324,7 @@ export default function RecipientFeed() {
         `Pickup secured for ${requestedQuantity} item${requestedQuantity > 1 ? "s" : ""}.`,
         "success"
       );
-      await fetchListings();
+      fetchListings(); // background refresh — don't block spinner release
     } catch (err) {
       let msg = err.message || "Could not complete that claim right now.";
       if (err.code === "ALREADY_CLAIMED") {

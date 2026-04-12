@@ -203,8 +203,8 @@ function ClaimCard({ claim, isCancelling, onCancel, onShowMap, onNavigate }) {
         {listing && <MetaItem label="Pickup ends" value={formatTime(listing.pickup_end)} small />}
       </div>
 
-      {/* Navigation */}
-      {hasLocation && (
+      {/* Navigation — only for confirmed claims */}
+      {claim.status === 'confirmed' && hasLocation && (
         <div style={{ borderTop: '1px solid var(--mm-border)', paddingTop: 14 }}>
           <p style={{ fontSize: '.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--mm-text-4)', marginBottom: 10 }}>
             Navigate to pickup

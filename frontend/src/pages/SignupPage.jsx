@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 
-const ROLE_HOME = { recipient: '/browse', restaurant: '/restaurant', admin: '/admin' }
+const ROLE_HOME = { recipient: '/browse', restaurant: '/restaurant', admin: '/admin', partner: '/partner' }
 
 const ROLES = [
   {
@@ -20,6 +20,14 @@ const ROLES = [
     icon: '🍽️',
     accent: '#2563EB',
     bg: 'rgba(37,99,235,.08)',
+  },
+  {
+    value: 'partner',
+    label: 'Partner',
+    desc: 'Coordinate bulk pickups for your organization',
+    icon: '🤝',
+    accent: '#7C3AED',
+    bg: 'rgba(124,58,237,.08)',
   },
 ]
 

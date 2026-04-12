@@ -152,7 +152,7 @@ export default function PartnerPage() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 12, borderTop: "1px solid var(--mm-border)", paddingTop: 14 }}>
                     <div style={{ display: "flex", gap: 12 }}>
                       <div style={{ flex: 1 }}>
-                        <label className="mm-label" htmlFor={`qty-${listing.id}`}>Quantity (max {maxQty})</label>
+                        <label className="mm-field-label" htmlFor={`qty-${listing.id}`}>Quantity (max {maxQty})</label>
                         <input
                           id={`qty-${listing.id}`} type="number" min={1} max={maxQty}
                           value={quantities[listing.id] ?? 1}
@@ -161,7 +161,7 @@ export default function PartnerPage() {
                         />
                       </div>
                       <div style={{ flex: 1 }}>
-                        <label className="mm-label" htmlFor={`group-${listing.id}`}>Group / org name</label>
+                        <label className="mm-field-label" htmlFor={`group-${listing.id}`}>Group / org name</label>
                         <input
                           id={`group-${listing.id}`} type="text" placeholder="e.g. City Food Bank"
                           value={groupNames[listing.id] || ""}
@@ -172,7 +172,7 @@ export default function PartnerPage() {
                     </div>
 
                     <div>
-                      <label className="mm-label" htmlFor={`contact-${listing.id}`}>Contact info (optional)</label>
+                      <label className="mm-field-label" htmlFor={`contact-${listing.id}`}>Contact info (optional)</label>
                       <input
                         id={`contact-${listing.id}`} type="text" placeholder="coordinator@org.example"
                         value={contactInfos[listing.id] || ""}
@@ -183,7 +183,7 @@ export default function PartnerPage() {
 
                     {slots.length > 0 && (
                       <div>
-                        <label className="mm-label" htmlFor={`slot-${listing.id}`}>Pickup slot</label>
+                        <label className="mm-field-label" htmlFor={`slot-${listing.id}`}>Pickup slot</label>
                         <select
                           id={`slot-${listing.id}`}
                           value={slotSelections[listing.id] || ""}

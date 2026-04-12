@@ -341,7 +341,7 @@ export default function RestaurantDashboard() {
 
           <form onSubmit={handleSubmit} style={s.form}>
             <div style={s.fieldGroup}>
-              <label className="mm-label" htmlFor="rd-title">Title</label>
+              <label className="mm-field-label" htmlFor="rd-title">Title</label>
               <input
                 id="rd-title"
                 type="text"
@@ -354,7 +354,7 @@ export default function RestaurantDashboard() {
             </div>
 
             <div style={s.fieldGroup}>
-              <label className="mm-label" htmlFor="rd-desc">Description</label>
+              <label className="mm-field-label" htmlFor="rd-desc">Description</label>
               <textarea
                 id="rd-desc"
                 name="description"
@@ -368,7 +368,7 @@ export default function RestaurantDashboard() {
 
             <div style={s.row}>
               <div style={s.fieldGroupHalf}>
-                <label className="mm-label" htmlFor="rd-qty">Quantity</label>
+                <label className="mm-field-label" htmlFor="rd-qty">Quantity</label>
                 <input
                   id="rd-qty"
                   type="number"
@@ -384,7 +384,7 @@ export default function RestaurantDashboard() {
 
             <div style={s.row}>
               <div style={s.fieldGroupHalf}>
-                <label className="mm-label" htmlFor="rd-loc">
+                <label className="mm-field-label" htmlFor="rd-loc">
                   Location Name <span style={{ color: "var(--mm-text-4)", fontWeight: 400 }}>(optional)</span>
                 </label>
                 <input
@@ -400,7 +400,7 @@ export default function RestaurantDashboard() {
             </div>
 
             <div style={s.fieldGroup}>
-              <label className="mm-label">
+              <label className="mm-field-label">
                 Street Address <span style={{ color: "var(--mm-text-4)", fontWeight: 400 }}>(optional — enables map)</span>
               </label>
               <AddressAutocomplete
@@ -417,7 +417,7 @@ export default function RestaurantDashboard() {
             </div>
 
             <div style={s.fieldGroup}>
-              <label className="mm-label">Dietary Tags</label>
+              <label className="mm-field-label">Dietary Tags</label>
               <div style={s.tagContainer}>
                 {dietaryOptions.map((tag) => {
                   const selected = formData.dietary_tags.includes(tag);
@@ -476,7 +476,7 @@ export default function RestaurantDashboard() {
             </div>
 
             <div style={s.fieldGroup}>
-              <label className="mm-label">
+              <label className="mm-field-label">
                 Pickup Slots{" "}
                 <span style={{ color: "var(--mm-text-4)", fontWeight: 400 }}>(optional — recipients must select one)</span>
               </label>
@@ -526,7 +526,7 @@ export default function RestaurantDashboard() {
 
             <div style={s.row}>
               <div style={s.fieldGroupHalf}>
-                <label className="mm-label" htmlFor="rd-start">Pickup Start Time</label>
+                <label className="mm-field-label" htmlFor="rd-start">Pickup Start Time</label>
                 <input
                   id="rd-start"
                   type="datetime-local"
@@ -537,7 +537,7 @@ export default function RestaurantDashboard() {
                 />
               </div>
               <div style={s.fieldGroupHalf}>
-                <label className="mm-label" htmlFor="rd-end">Pickup End Time</label>
+                <label className="mm-field-label" htmlFor="rd-end">Pickup End Time</label>
                 <input
                   id="rd-end"
                   type="datetime-local"

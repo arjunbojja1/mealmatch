@@ -98,7 +98,7 @@ export default function LoginPage() {
         <div style={{ width: '100%', maxWidth: 400, animation: 'mm-grow-in .28s var(--mm-ease) both' }}>
 
           {/* Mobile logo */}
-          <div className="mm-show-mobile" style={{ alignItems: 'center', gap: 10, marginBottom: 32 }}>
+          <div className="mm-show-mobile" style={{ gap: 10, marginBottom: 32 }}>
             <img src="/MealMatch Logo.png" alt="" style={{ height: 54, borderRadius: 12 }} />
             <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--mm-text-1)', letterSpacing: '-.025em' }}>MealMatch</span>
           </div>
