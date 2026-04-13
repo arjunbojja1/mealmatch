@@ -27,6 +27,7 @@ import threading
 import logging
 import json
 import time
+import random
 import urllib.error
 import urllib.request
 
@@ -884,6 +885,15 @@ def _persist_listing(listing: "Listing") -> None:
             )
 
 
+def _persist_listings_bulk(seed_listings: list["Listing"]) -> None:
+    with _listings_persist_lock:
+        with _sqlite3.connect(_LISTINGS_DB) as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO listings (id, data) VALUES (?, ?)",
+                [(listing.id, listing.model_dump_json()) for listing in seed_listings],
+            )
+
+
 def _remove_persisted_listing(listing_id: str) -> None:
     with _listings_persist_lock:
         with _sqlite3.connect(_LISTINGS_DB) as conn:
@@ -930,98 +940,160 @@ claims: dict[str, Claim] = {}
 
 
 def _seed_listings() -> None:
-    """Seed demo listings — always refreshes timestamps so seeds are never stale after restart."""
+    """Seed 1,000 demo listings across major U.S. metros."""
     _now = datetime.now(timezone.utc)
+    _rng = random.Random(20260412)
 
     def _future(hours: float) -> datetime:
         return _now + timedelta(hours=hours)
 
-    _seeds: list[Listing] = [
-        Listing(
-            id="seed-cp-1", restaurant_id="rest-001",
-            title="Terp Tacos — Beef & Chicken",
-            description="End-of-night surplus from our taco bar: seasoned beef, grilled chicken, salsa, tortillas. ~35 portions.",
-            quantity=35, dietary_tags=["halal", "gluten"],
-            pickup_start=_future(0.25), pickup_end=_future(6),
-            status=ListingStatus.active, created_at=_now,
-            address="7777 Baltimore Ave, College Park, MD 20740",
-            location_name="Terp Taqueria", lat=38.9807, lng=-76.9369,
-        ),
-        Listing(
-            id="seed-cp-2", restaurant_id="rest-002",
-            title="UMD Dining Hall Soup & Bread",
-            description="Minestrone soup and assorted dinner rolls from South Campus Dining. 40 servings.",
-            quantity=40, dietary_tags=["vegetarian", "contains_dairy"],
-            pickup_start=_future(0.5), pickup_end=_future(8),
-            status=ListingStatus.active, created_at=_now,
-            address="3150 S Campus Dining Hall Dr, College Park, MD 20742",
-            location_name="South Campus Dining", lat=38.9836, lng=-76.9446,
-        ),
-        Listing(
-            id="seed-cp-3", restaurant_id="rest-003",
-            title="Halal Lamb Over Rice",
-            description="Street-style halal lamb and white rice with white sauce. 18 portions left.",
-            quantity=18, dietary_tags=["halal", "gluten-free"],
-            pickup_start=_future(0.25), pickup_end=_future(4),
-            status=ListingStatus.active, created_at=_now,
-            address="8001 Baltimore Ave, College Park, MD 20740",
-            location_name="Halal Cart at Route 1", lat=38.9815, lng=-76.9372,
-        ),
-        Listing(
-            id="seed-cp-4", restaurant_id="rest-004",
-            title="Vegan Wraps & Smoothies",
-            description="Leftover veggie wraps and unsold fruit smoothies from the market. 22 items.",
-            quantity=22, dietary_tags=["vegan", "gluten-free", "nut-free"],
-            pickup_start=_future(0.5), pickup_end=_future(6),
-            status=ListingStatus.active, created_at=_now,
-            address="7401 Baltimore Ave, College Park, MD 20740",
-            location_name="The Greens Market", lat=38.9776, lng=-76.9361,
-        ),
-        Listing(
-            id="seed-cp-5", restaurant_id="rest-005",
-            title="Korean BBQ Rice Bowls",
-            description="Bulgogi and bibimbap bowls from today's lunch special. 14 portions remaining.",
-            quantity=14, dietary_tags=["gluten"],
-            pickup_start=_future(1), pickup_end=_future(8),
-            status=ListingStatus.active, created_at=_now,
-            address="8051 Baltimore Ave, College Park, MD 20740",
-            location_name="Seoul Kitchen CP", lat=38.9821, lng=-76.9376,
-        ),
-        Listing(
-            id="seed-dc-1", restaurant_id="rest-001",
-            title="Grilled Salmon & Roasted Vegetables",
-            description="Atlantic salmon fillets with seasonal roasted vegetables from tonight's service.",
-            quantity=16, dietary_tags=["gluten-free", "dairy-free"],
-            pickup_start=_future(0.5), pickup_end=_future(6),
-            status=ListingStatus.active, created_at=_now,
-            address="1250 H St NE, Washington, DC 20002",
-            location_name="H Street Grille", lat=38.8997, lng=-76.9880,
-        ),
-        Listing(
-            id="seed-dc-2", restaurant_id="rest-002",
-            title="Ethiopian Combo Platter",
-            description="Injera with lentil stew, collard greens, and spiced chickpeas. 20 portions.",
-            quantity=20, dietary_tags=["vegan", "gluten-free", "halal"],
-            pickup_start=_future(0.25), pickup_end=_future(5),
-            status=ListingStatus.active, created_at=_now,
-            address="910 U St NW, Washington, DC 20001",
-            location_name="Addis Ethiopian", lat=38.9171, lng=-77.0289,
-        ),
-        Listing(
-            id="seed-dc-3", restaurant_id="rest-003",
-            title="Dim Sum Assortment",
-            description="Har gow, siu mai, and BBQ pork buns. 30 portions from weekend brunch.",
-            quantity=30, dietary_tags=["gluten", "contains_dairy"],
-            pickup_start=_future(0.5), pickup_end=_future(7),
-            status=ListingStatus.active, created_at=_now,
-            address="6th & H St NW, Washington, DC 20001",
-            location_name="China Garden DC", lat=38.9007, lng=-77.0180,
-        ),
+    _legacy_seed_ids = (
+        "seed-cp-1", "seed-cp-2", "seed-cp-3", "seed-cp-4", "seed-cp-5",
+        "seed-dc-1", "seed-dc-2", "seed-dc-3",
+    )
+    for _legacy_id in _legacy_seed_ids:
+        listings.pop(_legacy_id, None)
+        _remove_persisted_listing(_legacy_id)
+
+    _metros = [
+        {"city": "New York", "state": "NY", "lat": 40.7128, "lng": -74.0060},
+        {"city": "Los Angeles", "state": "CA", "lat": 34.0522, "lng": -118.2437},
+        {"city": "Chicago", "state": "IL", "lat": 41.8781, "lng": -87.6298},
+        {"city": "Houston", "state": "TX", "lat": 29.7604, "lng": -95.3698},
+        {"city": "Phoenix", "state": "AZ", "lat": 33.4484, "lng": -112.0740},
+        {"city": "Philadelphia", "state": "PA", "lat": 39.9526, "lng": -75.1652},
+        {"city": "San Antonio", "state": "TX", "lat": 29.4241, "lng": -98.4936},
+        {"city": "San Diego", "state": "CA", "lat": 32.7157, "lng": -117.1611},
+        {"city": "Dallas", "state": "TX", "lat": 32.7767, "lng": -96.7970},
+        {"city": "San Jose", "state": "CA", "lat": 37.3382, "lng": -121.8863},
+        {"city": "Austin", "state": "TX", "lat": 30.2672, "lng": -97.7431},
+        {"city": "Jacksonville", "state": "FL", "lat": 30.3322, "lng": -81.6557},
+        {"city": "Fort Worth", "state": "TX", "lat": 32.7555, "lng": -97.3308},
+        {"city": "Columbus", "state": "OH", "lat": 39.9612, "lng": -82.9988},
+        {"city": "Charlotte", "state": "NC", "lat": 35.2271, "lng": -80.8431},
+        {"city": "San Francisco", "state": "CA", "lat": 37.7749, "lng": -122.4194},
+        {"city": "Seattle", "state": "WA", "lat": 47.6062, "lng": -122.3321},
+        {"city": "Denver", "state": "CO", "lat": 39.7392, "lng": -104.9903},
+        {"city": "Boston", "state": "MA", "lat": 42.3601, "lng": -71.0589},
+        {"city": "Washington", "state": "DC", "lat": 38.9072, "lng": -77.0369},
+        {"city": "Nashville", "state": "TN", "lat": 36.1627, "lng": -86.7816},
+        {"city": "Detroit", "state": "MI", "lat": 42.3314, "lng": -83.0458},
+        {"city": "Portland", "state": "OR", "lat": 45.5152, "lng": -122.6784},
+        {"city": "Las Vegas", "state": "NV", "lat": 36.1699, "lng": -115.1398},
+        {"city": "Minneapolis", "state": "MN", "lat": 44.9778, "lng": -93.2650},
     ]
+
+    _food_templates = [
+        {
+            "title": "Family Pasta Trays",
+            "description": "Baked pasta trays and garlic bread from dinner service.",
+            "tags": ["vegetarian", "contains_dairy"],
+            "qty_min": 12,
+            "qty_max": 44,
+        },
+        {
+            "title": "Halal Chicken Rice Bowls",
+            "description": "Grilled halal chicken with herbed rice and vegetables.",
+            "tags": ["halal", "dairy-free"],
+            "qty_min": 10,
+            "qty_max": 40,
+        },
+        {
+            "title": "Vegan Stir-Fry Boxes",
+            "description": "Tofu and mixed vegetable stir-fry over brown rice.",
+            "tags": ["vegan", "gluten-free", "nut-free"],
+            "qty_min": 8,
+            "qty_max": 36,
+        },
+        {
+            "title": "Breakfast Sandwich Packs",
+            "description": "Egg and cheese breakfast sandwiches from morning prep.",
+            "tags": ["vegetarian", "contains_dairy", "gluten"],
+            "qty_min": 14,
+            "qty_max": 50,
+        },
+        {
+            "title": "Soup and Bread Kits",
+            "description": "Chef's soup of the day with artisan bread loaves.",
+            "tags": ["dairy-free"],
+            "qty_min": 16,
+            "qty_max": 60,
+        },
+        {
+            "title": "BBQ Plate Surplus",
+            "description": "Smoked proteins, sides, and cornbread from lunch rush.",
+            "tags": ["gluten"],
+            "qty_min": 12,
+            "qty_max": 52,
+        },
+        {
+            "title": "Mediterranean Mezze Sets",
+            "description": "Falafel, hummus, pita, and tabbouleh family packs.",
+            "tags": ["vegetarian", "halal"],
+            "qty_min": 10,
+            "qty_max": 38,
+        },
+        {
+            "title": "Gluten-Free Grain Bowls",
+            "description": "Roasted vegetables with quinoa and citrus dressing.",
+            "tags": ["gluten-free", "vegan"],
+            "qty_min": 9,
+            "qty_max": 34,
+        },
+    ]
+
+    _street_names = [
+        "Main St",
+        "Market St",
+        "Broadway",
+        "Washington Ave",
+        "Park Ave",
+        "Oak St",
+        "Maple Ave",
+        "Cedar St",
+        "Pine St",
+        "Sunset Blvd",
+        "Riverside Dr",
+        "Highland Ave",
+    ]
+
+    _seeds: list[Listing] = []
+    _seed_count = 1000
+    for i in range(1, _seed_count + 1):
+        metro = _metros[(i - 1) % len(_metros)]
+        template = _food_templates[_rng.randrange(len(_food_templates))]
+        quantity = _rng.randint(template["qty_min"], template["qty_max"])
+        pickup_delay = _rng.uniform(0.25, 3.0)
+        pickup_duration = _rng.uniform(2.0, 10.0)
+        lat = round(metro["lat"] + _rng.uniform(-0.09, 0.09), 6)
+        lng = round(metro["lng"] + _rng.uniform(-0.09, 0.09), 6)
+        street_number = _rng.randint(100, 9999)
+        street_name = _street_names[_rng.randrange(len(_street_names))]
+        zip_code = 10000 + ((i * 97) % 89999)
+        address = f"{street_number} {street_name}, {metro['city']}, {metro['state']} {zip_code:05d}"
+
+        _seeds.append(
+            Listing(
+                id=f"seed-us-{i:04d}",
+                restaurant_id=f"rest-{((i - 1) % 250) + 1:03d}",
+                title=f"{template['title']} ({metro['city']})",
+                description=f"{template['description']} Available for same-day community pickup.",
+                quantity=quantity,
+                dietary_tags=list(template["tags"]),
+                pickup_start=_future(pickup_delay),
+                pickup_end=_future(pickup_delay + pickup_duration),
+                status=ListingStatus.active,
+                created_at=_now - timedelta(minutes=_rng.randint(5, 180)),
+                address=address,
+                location_name=f"{metro['city']} Community Kitchen #{((i - 1) // len(_metros)) + 1}",
+                lat=lat,
+                lng=lng,
+            )
+        )
+
     for seed in _seeds:
-        # Always update in-memory and SQLite — keeps pickup windows fresh after restart
         listings[seed.id] = seed
-        _persist_listing(seed)
+    _persist_listings_bulk(_seeds)
 
 
 # ---------------------------------------------------------------------------

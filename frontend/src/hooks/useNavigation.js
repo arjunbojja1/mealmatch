@@ -17,6 +17,22 @@ const NAV_MODE_KEYS = ['driving', 'walking', 'bicycling', 'transit']
 export const STEP_ADVANCE_M = 30
 export const REROUTE_M = 200
 
+const GEO_ERR_LABEL = {
+  1: 'PERMISSION_DENIED',
+  2: 'POSITION_UNAVAILABLE',
+  3: 'TIMEOUT',
+}
+const GEO_PRIMARY_OPTIONS = {
+  enableHighAccuracy: true,
+  timeout: 12000,
+  maximumAge: 0,
+}
+const GEO_FALLBACK_OPTIONS = {
+  enableHighAccuracy: false,
+  timeout: 20000,
+  maximumAge: 120000,
+}
+
 // ─── Pure utilities (exported for tests) ─────────────────────────────────────
 
 // Coerce to number before validating — handles string coords from API
@@ -132,6 +148,25 @@ export function stepText(step) {
   if (type === 'end of road') return `Turn ${mod} at road's end${road}`
   if (type === 'roundabout' || type === 'rotary') return `Take the roundabout${road}`
   return `Continue${road}`
+}
+
+function geolocationErrorMessage(err) {
+  const code = Number(err?.code)
+  if (code === 1) {
+    return 'Location access was denied. Allow location in your browser settings and try again.'
+  }
+  if (code === 2) {
+    return 'Your device could not determine a location. Check location services, Wi-Fi/cellular, and try again.'
+  }
+  if (code === 3) {
+    return 'Location request timed out. Move to an area with better signal and try again.'
+  }
+  return 'Could not get your location. Check device settings and try again.'
+}
+
+function geolocationErrorLabel(err) {
+  const code = Number(err?.code)
+  return GEO_ERR_LABEL[code] || 'UNKNOWN'
 }
 
 // ─── useNavigation hook ───────────────────────────────────────────────────────
@@ -407,26 +442,50 @@ export function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart
       let pos
       try {
         pos = await new Promise((resolve, reject) =>
-          navigator.geolocation.getCurrentPosition(resolve, reject, {
-            enableHighAccuracy: true,
-            timeout: 12000,
-          }),
+          navigator.geolocation.getCurrentPosition(resolve, reject, GEO_PRIMARY_OPTIONS),
         )
-      } catch (e) {
-        if (!mountedRef.current) return
-        setNavError(
-          e.code === 1
-            ? 'Location access was denied. Allow location in your browser settings and try again.'
-            : 'Could not get your location. Check device settings and try again.',
-        )
-        logMapError('Initial geolocation fetch failed', {
-          action: 'start_navigation',
-          listing_id: listing?.id || null,
-          geolocation_error_code: e?.code ?? null,
-          error: String(e?.message || e),
-        }, 'error', 'MAP_GEOLOCATION_FAILED')
-        setNavLoading(false)
-        return
+      } catch (initialErr) {
+        let geolocationErr = initialErr
+        let resolvedByRetry = false
+
+        // Retry once with relaxed options for common POSITION_UNAVAILABLE/TIMEOUT failures.
+        if (geolocationErr?.code === 2 || geolocationErr?.code === 3) {
+          logMapError('Initial geolocation fetch failed; retrying with fallback options', {
+            action: 'start_navigation',
+            listing_id: listing?.id || null,
+            geolocation_error_code: geolocationErr?.code ?? null,
+            geolocation_error_name: geolocationErrorLabel(geolocationErr),
+            error: String(geolocationErr?.message || geolocationErrorLabel(geolocationErr)),
+          }, 'warn', 'MAP_GEOLOCATION_RETRY')
+
+          try {
+            pos = await new Promise((resolve, reject) =>
+              navigator.geolocation.getCurrentPosition(resolve, reject, GEO_FALLBACK_OPTIONS),
+            )
+            resolvedByRetry = true
+          } catch (retryErr) {
+            geolocationErr = retryErr
+          }
+        }
+
+        if (resolvedByRetry) {
+          logMapError('Geolocation fallback succeeded after initial failure', {
+            action: 'start_navigation',
+            listing_id: listing?.id || null,
+          }, 'info', 'MAP_GEOLOCATION_RETRY_SUCCEEDED')
+        } else {
+          if (!mountedRef.current) return
+          setNavError(geolocationErrorMessage(geolocationErr))
+          logMapError('Initial geolocation fetch failed', {
+            action: 'start_navigation',
+            listing_id: listing?.id || null,
+            geolocation_error_code: geolocationErr?.code ?? null,
+            geolocation_error_name: geolocationErrorLabel(geolocationErr),
+            error: String(geolocationErr?.message || geolocationErrorLabel(geolocationErr)),
+          }, geolocationErr?.code ? 'warn' : 'error', 'MAP_GEOLOCATION_FAILED')
+          setNavLoading(false)
+          return
+        }
       }
 
       if (!mountedRef.current) return
@@ -536,8 +595,9 @@ export function useNavigation({ mapRef, mapReady, logMapError, onNavigationStart
           logMapError('watchPosition callback error', {
             action: 'watch_position',
             geolocation_error_code: err?.code ?? null,
-            error: String(err?.message || err),
-          }, 'error', 'MAP_WATCH_POSITION_FAILED')
+            geolocation_error_name: geolocationErrorLabel(err),
+            error: String(err?.message || geolocationErrorLabel(err)),
+          }, err?.code ? 'warn' : 'error', 'MAP_WATCH_POSITION_FAILED')
         },
         { enableHighAccuracy: true, maximumAge: 2000 },
       )

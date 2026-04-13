@@ -91,7 +91,7 @@ These accounts are seeded at startup and always available:
 | `recipient@mealmatch.dev` | `Recipient1!` | Recipient (EBT pre-verified) |
 | `partner@mealmatch.dev` | `Partner1234!` | Partner |
 
-Eight demo listings are seeded across College Park, MD and Washington, DC and refreshed on every server restart so pickup windows are never stale.
+1,000 demo listings are seeded across major U.S. metros and refreshed on every server restart so pickup windows are never stale.
 
 ---
 
