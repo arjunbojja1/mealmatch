@@ -1,0 +1,3 @@
+[submodule "mealmatch"]
+	path = mealmatch
+	url = https://github.com/arjunbojja1/mealmatch.git
